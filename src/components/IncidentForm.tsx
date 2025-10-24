@@ -24,7 +24,6 @@ export interface IncidentFormData {
   description: string;
   category: string;
   location: string;
-  status: string;
   softwareType?: string;
   // Hardware specific fields
   equipmentName?: string;
@@ -34,7 +33,7 @@ export interface IncidentFormData {
   actionTaken?: string;
   stateAfterIntervention?: string;
   recommendation?: string;
-  downtime?: string;
+  downtime?: number;
 }
 
 export function IncidentForm({ onSubmit, type, title }: IncidentFormProps) {
@@ -44,7 +43,6 @@ export function IncidentForm({ onSubmit, type, title }: IncidentFormProps) {
     description: "",
     category: "",
     location: "",
-    status: "En attente",
     softwareType: "",
     equipmentName: "",
     partition: "",
@@ -53,7 +51,7 @@ export function IncidentForm({ onSubmit, type, title }: IncidentFormProps) {
     actionTaken: "",
     stateAfterIntervention: "",
     recommendation: "",
-    downtime: "",
+    downtime: 0,
   });
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -65,7 +63,6 @@ export function IncidentForm({ onSubmit, type, title }: IncidentFormProps) {
       description: "",
       category: "",
       location: "",
-      status: "En attente",
       softwareType: "",
       equipmentName: "",
       partition: "",
@@ -74,7 +71,7 @@ export function IncidentForm({ onSubmit, type, title }: IncidentFormProps) {
       actionTaken: "",
       stateAfterIntervention: "",
       recommendation: "",
-      downtime: "",
+      downtime: 0,
     });
   };
 
@@ -301,38 +298,30 @@ export function IncidentForm({ onSubmit, type, title }: IncidentFormProps) {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="downtime">Durée de la panne</Label>
-                <Input
-                  id="downtime"
-                  placeholder="Ex: 2h 30min"
-                  value={formData.downtime}
-                  onChange={(e) =>
-                    setFormData({ ...formData, downtime: e.target.value })
-                  }
-                  required
-                />
+                <Label htmlFor="downtime">Durée de la panne (minutes)</Label>
+                <div className="flex gap-2">
+                  <Input
+                    id="downtime"
+                    type="number"
+                    min="0"
+                    placeholder="Ex: 150"
+                    value={formData.downtime || ''}
+                    onChange={(e) =>
+                      setFormData({ ...formData, downtime: parseInt(e.target.value) || 0 })
+                    }
+                    required
+                  />
+                  <div className="flex items-center text-sm text-muted-foreground">
+                    min
+                  </div>
+                </div>
+                <p className="text-xs text-muted-foreground">
+                  Entrez la durée en minutes (ex: 120 pour 2h, 90 pour 1h30)
+                </p>
               </div>
             </>
           )}
 
-          <div className="space-y-2">
-            <Label htmlFor="status">Statut</Label>
-            <Select
-              value={formData.status}
-              onValueChange={(value) =>
-                setFormData({ ...formData, status: value })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="En attente">En attente</SelectItem>
-                <SelectItem value="En cours">En cours</SelectItem>
-                <SelectItem value="Résolu">Résolu</SelectItem>
-              </SelectContent>
-            </Select>
-          </div>
 
           <Button type="submit" className="w-full">
             Enregistrer l'incident

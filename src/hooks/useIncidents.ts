@@ -1,136 +1,245 @@
-import { useState } from "react";
-import { Incident } from "@/components/IncidentTable";
+import { useState, useEffect, useCallback } from "react";
+import { apiClient, Incident, Report, IncidentStats } from "@/services/api";
 import { IncidentFormData } from "@/components/IncidentForm";
 
-interface Report {
-  id: number;
-  incidentId: number;
-  date: string;
-  anomaly: string;
-  analysis: string;
-  conclusion: string;
-}
-
-const mockHardwareIncidents: Incident[] = [
-  {
-    id: 1,
-    date: "2025-10-20",
-    time: "14:30",
-    description: "Panne d'alimentation secteur - Tour de contrôle",
-    category: "Alimentation",
-    location: "Tour principale - Niveau 3",
-    status: "Résolu",
-  },
-  {
-    id: 2,
-    date: "2025-10-21",
-    time: "09:15",
-    description: "Défaillance du système de communication radio",
-    category: "Communication",
-    location: "Salle technique - Poste 2",
-    status: "En cours",
-  },
-];
-
-const mockSoftwareIncidents: Incident[] = [
-  {
-    id: 3,
-    date: "2025-10-21",
-    time: "11:45",
-    description: "Erreur d'affichage radar - Piste non visible",
-    category: "Affichage Radar",
-    location: "Poste de contrôle A1",
-    status: "En attente",
-  },
-  {
-    id: 4,
-    date: "2025-10-22",
-    time: "08:00",
-    description: "Base de données de plans de vol inaccessible",
-    category: "Base de données",
-    location: "Serveur principal",
-    status: "En cours",
-  },
-];
-
 export function useIncidents() {
-  const [hardwareIncidents, setHardwareIncidents] = useState<Incident[]>(mockHardwareIncidents);
-  const [softwareIncidents, setSoftwareIncidents] = useState<Incident[]>(mockSoftwareIncidents);
+  const [hardwareIncidents, setHardwareIncidents] = useState<Incident[]>([]);
+  const [softwareIncidents, setSoftwareIncidents] = useState<Incident[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
-  const [nextId, setNextId] = useState(5);
+  const [stats, setStats] = useState<IncidentStats | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
-  const addHardwareIncident = (data: IncidentFormData) => {
-    const newIncident: Incident = {
-      id: nextId,
-      date: data.date,
-      time: data.time,
-      description: data.description,
-      category: data.category,
-      location: data.location,
-      status: data.status as "En attente" | "En cours" | "Résolu",
-      equipmentName: data.equipmentName,
-      partition: data.partition,
-      serviceName: data.serviceName,
-      anomaly: data.anomaly,
-      actionTaken: data.actionTaken,
-      stateAfterIntervention: data.stateAfterIntervention,
-      recommendation: data.recommendation,
-      downtime: data.downtime,
-    };
-    setHardwareIncidents([...hardwareIncidents, newIncident]);
-    setNextId(nextId + 1);
+  // Load incidents on mount
+  useEffect(() => {
+    loadIncidents();
+    loadStats();
+  }, []);
+
+  const loadIncidents = async () => {
+    try {
+      setLoading(true);
+      setError(null);
+
+      const [hardwareResponse, softwareResponse] = await Promise.all([
+        apiClient.getIncidents({ type: 'hardware' }),
+        apiClient.getIncidents({ type: 'software' })
+      ]);
+
+      setHardwareIncidents(hardwareResponse.results);
+      setSoftwareIncidents(softwareResponse.results);
+    } catch (err: any) {
+      setError(err.message || "Erreur lors du chargement des incidents");
+      console.error("Error loading incidents:", err);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const addSoftwareIncident = (data: IncidentFormData) => {
-    const newIncident: Incident = {
-      id: nextId,
-      date: data.date,
-      time: data.time,
-      description: data.description,
-      category: data.category,
-      location: data.location,
-      status: data.status as "En attente" | "En cours" | "Résolu",
-      softwareType: data.softwareType,
-      anomaly: data.anomaly,
-    };
-    setSoftwareIncidents([...softwareIncidents, newIncident]);
-    setNextId(nextId + 1);
+  const loadStats = async () => {
+    try {
+      const statsData = await apiClient.getIncidentStats();
+      setStats(statsData);
+    } catch (err: any) {
+      console.error("Error loading stats:", err);
+    }
   };
 
-  const deleteHardwareIncident = (id: number) => {
-    setHardwareIncidents(hardwareIncidents.filter((i) => i.id !== id));
+  const addHardwareIncident = async (data: IncidentFormData) => {
+    try {
+      const incidentData = {
+        incident_type: 'hardware' as const,
+        date: data.date,
+        time: data.time,
+        description: data.description,
+        category: data.category,
+        location: data.location,
+        equipment_name: data.equipmentName,
+        partition: data.partition,
+        service_name: data.serviceName,
+        anomaly: data.anomaly,
+        action_taken: data.actionTaken,
+        state_after_intervention: data.stateAfterIntervention,
+        recommendation: data.recommendation,
+        downtime: data.downtime || 0,
+      };
+
+      const newIncident = await apiClient.createIncident(incidentData);
+      setHardwareIncidents(prev => [newIncident, ...prev]);
+      loadStats(); // Refresh stats
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la création de l'incident matériel");
+      throw err;
+    }
   };
 
-  const deleteSoftwareIncident = (id: number) => {
-    setSoftwareIncidents(softwareIncidents.filter((i) => i.id !== id));
-    setReports(reports.filter((r) => r.incidentId !== id));
+  const addSoftwareIncident = async (data: IncidentFormData) => {
+    try {
+      const incidentData = {
+        incident_type: 'software' as const,
+        date: data.date,
+        time: data.time,
+        description: data.description,
+        category: data.category,
+        location: data.location,
+        service_name: data.serviceName,
+        software_type: data.softwareType,
+        anomaly: data.anomaly,
+        action_taken: data.actionTaken,
+        state_after_intervention: data.stateAfterIntervention,
+        recommendation: data.recommendation,
+      };
+
+      const newIncident = await apiClient.createIncident(incidentData);
+      setSoftwareIncidents(prev => [newIncident, ...prev]);
+      loadStats(); // Refresh stats
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la création de l'incident logiciel");
+      throw err;
+    }
   };
 
-  const addReport = (
+  const deleteHardwareIncident = async (id: number) => {
+    try {
+      await apiClient.deleteIncident(id);
+      setHardwareIncidents(prev => prev.filter(i => i.id !== id));
+      loadStats(); // Refresh stats
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la suppression de l'incident");
+      throw err;
+    }
+  };
+
+  const updateHardwareIncident = async (id: number, data: IncidentFormData) => {
+    try {
+      const incidentData = {
+        incident_type: 'hardware' as const,
+        date: data.date,
+        time: data.time,
+        description: data.description,
+        category: data.category,
+        location: data.location,
+        equipment_name: data.equipmentName,
+        partition: data.partition,
+        service_name: data.serviceName,
+        anomaly: data.anomaly,
+        action_taken: data.actionTaken,
+        state_after_intervention: data.stateAfterIntervention,
+        recommendation: data.recommendation,
+        downtime: data.downtime || 0,
+      };
+
+      const updatedIncident = await apiClient.updateIncident(id, incidentData);
+      setHardwareIncidents(prev => prev.map(i => i.id === id ? updatedIncident : i));
+      loadStats(); // Refresh stats
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la mise à jour de l'incident");
+      throw err;
+    }
+  };
+
+  const updateSoftwareIncident = async (id: number, data: IncidentFormData) => {
+    try {
+      const incidentData = {
+        incident_type: 'software' as const,
+        date: data.date,
+        time: data.time,
+        description: data.description,
+        category: data.category,
+        location: data.location,
+        service_name: data.serviceName,
+        software_type: data.softwareType,
+        anomaly: data.anomaly,
+        action_taken: data.actionTaken,
+        state_after_intervention: data.stateAfterIntervention,
+        recommendation: data.recommendation,
+      };
+
+      const updatedIncident = await apiClient.updateIncident(id, incidentData);
+      setSoftwareIncidents(prev => prev.map(i => i.id === id ? updatedIncident : i));
+      loadStats(); // Refresh stats
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la mise à jour de l'incident");
+      throw err;
+    }
+  };
+
+  const deleteSoftwareIncident = async (id: number) => {
+    try {
+      await apiClient.deleteIncident(id);
+      setSoftwareIncidents(prev => prev.filter(i => i.id !== id));
+      setReports(prev => prev.filter(r => r.incident !== id));
+      loadStats(); // Refresh stats
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la suppression de l'incident");
+      throw err;
+    }
+  };
+
+  const addReport = async (
     incidentId: number,
     data: { anomaly: string; analysis: string; conclusion: string }
   ) => {
-    const newReport: Report = {
-      id: reports.length + 1,
-      incidentId,
-      date: new Date().toISOString().split("T")[0],
-      ...data,
-    };
-    setReports([...reports, newReport]);
+    try {
+      const reportData = {
+        incident: incidentId,
+        date: new Date().toISOString().split("T")[0],
+        anomaly: data.anomaly,
+        analysis: data.analysis,
+        conclusion: data.conclusion,
+      };
+
+      const report = await apiClient.createReport(reportData);
+      
+      // Update reports state - either add new or update existing
+      setReports(prev => {
+        const existingIndex = prev.findIndex(r => r.incident === incidentId);
+        if (existingIndex >= 0) {
+          // Update existing report
+          const updated = [...prev];
+          updated[existingIndex] = report;
+          return updated;
+        } else {
+          // Add new report
+          return [report, ...prev];
+        }
+      });
+    } catch (err: any) {
+      setError(err.message || "Erreur lors de la création/modification du rapport");
+      throw err;
+    }
   };
 
-  const getReports = (incidentId: number) => {
-    return reports.filter((r) => r.incidentId === incidentId);
+  const getReports = useCallback(async (incidentId: number) => {
+    try {
+      const response = await apiClient.getReports({ incident: incidentId });
+      return response.results;
+    } catch (err: any) {
+      console.error("Error loading reports:", err);
+      return [];
+    }
+  }, []);
+
+  const refreshIncidents = () => {
+    loadIncidents();
+    loadStats();
   };
 
   return {
     hardwareIncidents,
     softwareIncidents,
+    reports,
+    stats,
+    loading,
+    error,
     addHardwareIncident,
     addSoftwareIncident,
+    updateHardwareIncident,
+    updateSoftwareIncident,
     deleteHardwareIncident,
     deleteSoftwareIncident,
     addReport,
     getReports,
+    refreshIncidents,
   };
 }

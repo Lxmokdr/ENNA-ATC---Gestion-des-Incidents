@@ -6,11 +6,15 @@ import { toast } from "sonner";
 
 export default function SoftwareIncidents() {
   const navigate = useNavigate();
-  const { softwareIncidents, addSoftwareIncident, deleteSoftwareIncident } = useIncidents();
+  const { softwareIncidents, addSoftwareIncident, deleteSoftwareIncident, reports } = useIncidents();
 
   const handleSubmit = (data: IncidentFormData) => {
     addSoftwareIncident(data);
     toast.success("Incident logiciel ajouté avec succès");
+  };
+
+  const handleEdit = (id: number) => {
+    navigate(`/incident/edit/${id}`);
   };
 
   const handleDelete = (id: number) => {
@@ -45,9 +49,11 @@ export default function SoftwareIncidents() {
         </h2>
         <IncidentTable
           incidents={softwareIncidents}
+          onEdit={handleEdit}
           onDelete={handleDelete}
           onAddReport={handleAddReport}
           showReportButton
+          reports={reports}
         />
       </div>
     </div>

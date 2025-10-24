@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -8,6 +8,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useIncidents } from "@/hooks/useIncidents";
 import { toast } from "sonner";
 import { ArrowLeft } from "lucide-react";
+import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import {
   Table,
   TableBody,
@@ -21,23 +22,92 @@ export default function AddReport() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { softwareIncidents, addReport, getReports } = useIncidents();
+  const [reports, setReports] = useState<any[]>([]);
 
   const incident = softwareIncidents.find((i) => i.id === Number(id));
-  const reports = getReports(Number(id));
-
   const [formData, setFormData] = useState({
-    anomaly: incident?.anomaly || "",
+    anomaly: "",
     analysis: "",
     conclusion: "",
   });
+  const [isEditing, setIsEditing] = useState(false);
+  const [reportDialogOpen, setReportDialogOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+
+  useEffect(() => {
+    const loadReports = async () => {
+      try {
+        setIsLoading(true);
+        
+        // Add timeout to prevent infinite loading
+        const timeoutId = setTimeout(() => {
+          console.warn("Report loading timeout - setting loading to false");
+          setIsLoading(false);
+        }, 10000); // 10 second timeout
+        
+        const incidentReports = await getReports(Number(id));
+        clearTimeout(timeoutId);
+        setReports(incidentReports);
+        
+        // If there's already a report, populate the form for editing
+        if (incidentReports.length > 0) {
+          const existingReport = incidentReports[0];
+          setFormData({
+            anomaly: existingReport.anomaly || "",
+            analysis: existingReport.analysis || "",
+            conclusion: existingReport.conclusion || "",
+          });
+          setIsEditing(true);
+        } else {
+          // Reset form if no report exists
+          setFormData({
+            anomaly: "",
+            analysis: "",
+            conclusion: "",
+          });
+          setIsEditing(false);
+        }
+      } catch (error) {
+        console.error("Error loading reports:", error);
+        // Set empty state on error
+        setReports([]);
+        setFormData({
+          anomaly: "",
+          analysis: "",
+          conclusion: "",
+        });
+        setIsEditing(false);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    loadReports();
+  }, [id, getReports]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!incident) return;
+    setReportDialogOpen(true);
+  };
 
-    addReport(Number(id), formData);
-    toast.success("Rapport ajouté avec succès");
-    setFormData({ anomaly: "", analysis: "", conclusion: "" });
+  const handleReportConfirm = async () => {
+    if (!incident) return;
+
+    try {
+      await addReport(Number(id), formData);
+      if (isEditing) {
+        toast.success("Rapport modifié avec succès");
+      } else {
+        toast.success("Rapport ajouté avec succès");
+        setIsEditing(true);
+      }
+      
+      // Refresh reports
+      const incidentReports = await getReports(Number(id));
+      setReports(incidentReports);
+    } catch (error) {
+      toast.error(isEditing ? "Erreur lors de la modification du rapport" : "Erreur lors de l'ajout du rapport");
+    }
   };
 
   if (!incident) {
@@ -60,6 +130,29 @@ export default function AddReport() {
     );
   }
 
+  if (incident.incident_type !== 'software') {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center gap-4">
+          <Button variant="outline" onClick={() => navigate("/")}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            Retour
+          </Button>
+        </div>
+        <Card>
+          <CardContent className="py-8">
+            <p className="text-center text-muted-foreground">
+              Les rapports ne peuvent être créés que pour les incidents logiciels.
+            </p>
+            <p className="text-center text-sm text-muted-foreground mt-2">
+              Cet incident est de type {incident.incident_type}.
+            </p>
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -71,7 +164,7 @@ export default function AddReport() {
 
       <div>
         <h1 className="text-3xl font-bold text-foreground">
-          Ajouter un rapport
+          {isEditing ? "Modifier le rapport" : "Ajouter un rapport"}
         </h1>
         <p className="text-muted-foreground">
           Incident #{incident.id}: {incident.description}
@@ -114,10 +207,15 @@ export default function AddReport() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Nouveau rapport</CardTitle>
+          <CardTitle>{isEditing ? "Modifier le rapport" : "Nouveau rapport"}</CardTitle>
         </CardHeader>
         <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+          {isLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-muted-foreground">Chargement...</div>
+            </div>
+          ) : (
+            <form key={isEditing ? 'editing' : 'creating'} onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="anomaly">Anomalie observée (pré-remplie depuis l'incident)</Label>
               <Textarea
@@ -161,20 +259,21 @@ export default function AddReport() {
             </div>
 
             <Button type="submit" className="w-full">
-              Enregistrer le rapport
+              {isEditing ? "Modifier le rapport" : "Ajouter le rapport"}
             </Button>
           </form>
+          )}
         </CardContent>
       </Card>
 
       <Card>
         <CardHeader>
-          <CardTitle>Rapports existants ({reports.length})</CardTitle>
+          <CardTitle>Rapport de l'incident</CardTitle>
         </CardHeader>
         <CardContent>
           {reports.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
-              Aucun rapport pour cet incident
+              Aucun rapport pour cet incident. Créez-en un ci-dessus.
             </p>
           ) : (
             <div className="rounded-lg border">
@@ -206,6 +305,18 @@ export default function AddReport() {
           )}
         </CardContent>
       </Card>
+
+      {/* Report Confirmation Dialog */}
+      <ConfirmationDialog
+        open={reportDialogOpen}
+        onOpenChange={setReportDialogOpen}
+        title={isEditing ? "Modifier le rapport" : "Ajouter le rapport"}
+        description={`Êtes-vous sûr de vouloir ${isEditing ? "modifier" : "ajouter"} le rapport pour l'incident #${incident?.id} ?`}
+        confirmText={isEditing ? "Modifier" : "Ajouter"}
+        cancelText="Annuler"
+        onConfirm={handleReportConfirm}
+        variant="default"
+      />
     </div>
   );
 }

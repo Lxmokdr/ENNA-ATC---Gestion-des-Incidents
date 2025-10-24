@@ -1,14 +1,20 @@
+import { useNavigate } from "react-router-dom";
 import { IncidentForm, IncidentFormData } from "@/components/IncidentForm";
 import { IncidentTable } from "@/components/IncidentTable";
 import { useIncidents } from "@/hooks/useIncidents";
 import { toast } from "sonner";
 
 export default function HardwareIncidents() {
+  const navigate = useNavigate();
   const { hardwareIncidents, addHardwareIncident, deleteHardwareIncident } = useIncidents();
 
   const handleSubmit = (data: IncidentFormData) => {
     addHardwareIncident(data);
     toast.success("Incident matériel ajouté avec succès");
+  };
+
+  const handleEdit = (id: number) => {
+    navigate(`/incident/edit/${id}`);
   };
 
   const handleDelete = (id: number) => {
@@ -39,6 +45,7 @@ export default function HardwareIncidents() {
         </h2>
         <IncidentTable
           incidents={hardwareIncidents}
+          onEdit={handleEdit}
           onDelete={handleDelete}
         />
       </div>

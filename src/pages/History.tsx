@@ -33,10 +33,8 @@ export default function History() {
       (filters.type === "hardware" && hardwareIncidents.includes(incident)) ||
       (filters.type === "software" && softwareIncidents.includes(incident));
 
-    const matchesStatus =
-      filters.status === "all" || incident.status === filters.status;
 
-    return matchesSearch && matchesType && matchesStatus;
+    return matchesSearch && matchesType ;
   });
 
   return (
@@ -87,25 +85,6 @@ export default function History() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label htmlFor="status">Statut</Label>
-              <Select
-                value={filters.status}
-                onValueChange={(value) =>
-                  setFilters({ ...filters, status: value })
-                }
-              >
-                <SelectTrigger>
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Tous les statuts</SelectItem>
-                  <SelectItem value="En attente">En attente</SelectItem>
-                  <SelectItem value="En cours">En cours</SelectItem>
-                  <SelectItem value="Résolu">Résolu</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
           </div>
         </CardContent>
       </Card>

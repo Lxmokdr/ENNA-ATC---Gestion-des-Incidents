@@ -28,7 +28,9 @@ export function Navbar() {
           
           <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
             <User className="h-5 w-5 text-muted-foreground" />
-            <span className="text-sm font-medium">{user || "Agent ENNA"}</span>
+            <span className="text-sm font-medium">
+              {user ? user.username : "Agent ENNA"}
+            </span>
           </div>
 
           <Button

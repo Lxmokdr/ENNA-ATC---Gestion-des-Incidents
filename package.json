@@ -1,14 +1,21 @@
 {
-  "name": "vite_react_shadcn_ts",
+  "name": "enna-atc",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "ENNA ATC - Système de Gestion des Incidents Techniques",
   "type": "module",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "build:dev": "vite build --mode development",
     "lint": "eslint .",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "start": "./start.sh",
+    "stop": "./stop.sh",
+    "setup": "./setup.sh",
+    "backend": "cd backend-simple && node server.js",
+    "db-viewer": "cd backend-simple && node db-web-viewer.js",
+    "db-cli": "cd backend-simple && node db-viewer.js"
   },
   "dependencies": {
     "@hookform/resolvers": "^3.10.0",

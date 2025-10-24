@@ -18,16 +18,14 @@ export default function Login() {
     e.preventDefault();
     setIsLoading(true);
 
-    // Simulate login process (no backend)
-    setTimeout(() => {
-      if (formData.username && formData.password) {
-        login(formData.username);
-        toast.success("Connexion réussie");
-      } else {
-        toast.error("Veuillez remplir tous les champs");
-      }
+    try {
+      await login(formData.username.trim(), formData.password.trim());
+      toast.success("Connexion réussie");
+    } catch (error: any) {
+      toast.error(error.message || "Erreur de connexion");
+    } finally {
       setIsLoading(false);
-    }, 1000);
+    }
   };
 
   return (
