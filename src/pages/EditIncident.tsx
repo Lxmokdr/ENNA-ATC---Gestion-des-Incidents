@@ -222,13 +222,22 @@ export default function EditIncident() {
                   <div className="flex gap-2">
                     <Input
                       id="downtime"
-                      type="number"
-                      min="0"
+                      type="text"
+                      inputMode="numeric"
+                      pattern="[0-9]*"
                       placeholder="Ex: 150"
-                      value={formData.downtime || ''}
-                      onChange={(e) =>
-                        setFormData({ ...formData, downtime: parseInt(e.target.value) || 0 })
-                      }
+                      value={formData.downtime !== undefined ? formData.downtime.toString() : ''}
+                      onChange={(e) => {
+                        const value = e.target.value;
+                        if (value === "") {
+                          setFormData({ ...formData, downtime: 0 });
+                        } else {
+                          const numValue = parseInt(value, 10);
+                          if (!isNaN(numValue) && numValue >= 0) {
+                            setFormData({ ...formData, downtime: numValue });
+                          }
+                        }
+                      }}
                       required
                     />
                     <div className="flex items-center text-sm text-muted-foreground">

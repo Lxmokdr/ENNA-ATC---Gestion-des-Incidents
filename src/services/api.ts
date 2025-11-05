@@ -7,7 +7,6 @@ export interface User {
   id: number;
   username: string;
   role: 'technicien' | 'ingenieur' | 'chefdep' | 'superuser';
-  is_active: boolean;
   created_at: string;
 }
 
@@ -17,19 +16,35 @@ export interface Incident {
   date: string;
   time: string;
   description: string;
-  category: string;
-  location: string;
-  equipment_name?: string;
+  // Hardware fields
+  nom_de_equipement?: string;
   partition?: string;
-  service_name?: string;
-  downtime?: number;
-  software_type?: string;
-  anomaly?: string;
-  action_taken?: string;
-  state_after_intervention?: string;
+  numero_de_serie?: string;
+  anomalie_observee?: string;
+  action_realisee?: string;
+  piece_de_rechange_utilisee?: string;
+  etat_de_equipement_apres_intervention?: string;
   recommendation?: string;
-  created_by: User;
-  assigned_to?: User;
+  duree_arret?: number;
+  // Software fields
+  simulateur?: boolean;
+  salle_operationnelle?: boolean;
+  server?: string;
+  game?: string;
+  group?: string;
+  exercice?: string;
+  secteur?: string;
+  position_STA?: string;
+  position_logique?: string;
+  type_d_anomalie?: string;
+  indicatif?: string;
+  mode_radar?: string;
+  FL?: string;
+  longitude?: string;
+  latitude?: string;
+  code_SSR?: string;
+  sujet?: string;
+  commentaires?: string;
   created_at: string;
   updated_at: string;
 }
@@ -39,10 +54,10 @@ export interface Report {
   incident: number;
   incident_type: 'hardware' | 'software';
   date: string;
+  time: string;
   anomaly: string;
   analysis: string;
   conclusion: string;
-  created_by: User;
   created_at: string;
   updated_at: string;
 }
@@ -62,10 +77,14 @@ export interface IncidentStats {
   total_incidents: number;
   hardware_incidents: number;
   software_incidents: number;
-  total_downtime_minutes: number;
-  hardware_downtime_minutes: number;
-  software_downtime_minutes: number;
-  average_downtime_minutes: number;
+  hardware_downtime_minutes?: number;
+  hardware_avg_downtime_minutes?: number | null;
+  hardware_incidents_with_downtime?: number;
+  hardware_downtime_percentage?: number;
+  hardware_last_7_days?: number;
+  hardware_last_30_days?: number;
+  software_last_7_days?: number;
+  software_last_30_days?: number;
 }
 
 // API Client
@@ -78,10 +97,19 @@ class ApiClient {
     this.token = localStorage.getItem('enna_token');
   }
 
+  setToken(token: string | null) {
+    this.token = token;
+  }
+
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
+    // Refresh token from localStorage in case it was updated elsewhere
+    if (!this.token) {
+      this.token = localStorage.getItem('enna_token');
+    }
+    
     const url = `${this.baseURL}${endpoint}`;
     const headers: HeadersInit = {
       'Content-Type': 'application/json',
@@ -89,7 +117,7 @@ class ApiClient {
     };
 
     if (this.token) {
-      headers['Authorization'] = `Token ${this.token}`;
+      headers['Authorization'] = `Bearer ${this.token}`;
     }
 
     const response = await fetch(url, {
@@ -113,6 +141,7 @@ class ApiClient {
     });
     
     this.token = response.token;
+    this.setToken(response.token);
     localStorage.setItem('enna_token', response.token);
     localStorage.setItem('enna_user', JSON.stringify(response.user));
     
@@ -126,6 +155,7 @@ class ApiClient {
       });
     } finally {
       this.token = null;
+      this.setToken(null);
       localStorage.removeItem('enna_token');
       localStorage.removeItem('enna_user');
     }
@@ -170,7 +200,7 @@ class ApiClient {
     return this.request<Incident>(`/incidents/${id}/`);
   }
 
-  async createIncident(incidentData: Omit<Incident, 'id' | 'created_by' | 'assigned_to' | 'created_at' | 'updated_at'>): Promise<Incident> {
+  async createIncident(incidentData: Omit<Incident, 'id' | 'created_at' | 'updated_at'>): Promise<Incident> {
     return this.request<Incident>('/incidents/', {
       method: 'POST',
       body: JSON.stringify(incidentData),
@@ -218,7 +248,7 @@ class ApiClient {
     return this.request<Report>(`/reports/${id}/`);
   }
 
-  async createReport(reportData: Omit<Report, 'id' | 'created_by' | 'created_at' | 'updated_at'>): Promise<Report> {
+  async createReport(reportData: Omit<Report, 'id' | 'created_at' | 'updated_at'>): Promise<Report> {
     return this.request<Report>('/reports/', {
       method: 'POST',
       body: JSON.stringify(reportData),

@@ -21,10 +21,6 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-3">
-          <Button variant="ghost" size="icon" className="relative">
-            <Bell className="h-5 w-5" />
-            <span className="absolute right-2 top-2 h-2 w-2 rounded-full bg-accent"></span>
-          </Button>
           
           <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
             <User className="h-5 w-5 text-muted-foreground" />

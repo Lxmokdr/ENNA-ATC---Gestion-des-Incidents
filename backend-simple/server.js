@@ -27,7 +27,6 @@ db.serialize(() => {
     username TEXT UNIQUE NOT NULL,
     password TEXT NOT NULL,
     role TEXT NOT NULL DEFAULT 'technicien',
-    is_active BOOLEAN DEFAULT 1,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
@@ -36,22 +35,18 @@ db.serialize(() => {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL,
     time TEXT NOT NULL,
-    description TEXT NOT NULL,
-    category TEXT NOT NULL,
-    location TEXT NOT NULL,
-    equipment_name TEXT NOT NULL,
+    nom_de_equipement TEXT NOT NULL,
     partition TEXT,
-    downtime INTEGER DEFAULT 0,
-    anomaly TEXT,
-    action_taken TEXT,
-    state_after_intervention TEXT,
+    numero_de_serie TEXT,
+    description TEXT NOT NULL,
+    anomalie_observee TEXT,
+    action_realisee TEXT,
+    piece_de_rechange_utilisee TEXT,
+    etat_de_equipement_apres_intervention TEXT,
     recommendation TEXT,
-    created_by_id INTEGER,
-    assigned_to_id INTEGER,
+    duree_arret INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (created_by_id) REFERENCES users (id),
-    FOREIGN KEY (assigned_to_id) REFERENCES users (id)
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
   // Software incidents table
@@ -59,21 +54,28 @@ db.serialize(() => {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     date TEXT NOT NULL,
     time TEXT NOT NULL,
+    simulateur BOOLEAN DEFAULT 0,
+    salle_operationnelle BOOLEAN DEFAULT 0,
+    server TEXT,
+    game TEXT,
+    partition TEXT,
+    "group" TEXT,
+    exercice TEXT,
+    secteur TEXT,
+    position_STA TEXT,
+    position_logique TEXT,
+    type_d_anomalie TEXT,
+    indicatif TEXT,
+    mode_radar TEXT,
+    FL TEXT,
+    longitude TEXT,
+    latitude TEXT,
+    code_SSR TEXT,
+    sujet TEXT,
     description TEXT NOT NULL,
-    category TEXT NOT NULL,
-    location TEXT NOT NULL,
-    service_name TEXT NOT NULL,
-    software_type TEXT,
-    anomaly TEXT,
-    action_taken TEXT,
-    state_after_intervention TEXT,
-    recommendation TEXT,
-    created_by_id INTEGER,
-    assigned_to_id INTEGER,
+    commentaires TEXT,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (created_by_id) REFERENCES users (id),
-    FOREIGN KEY (assigned_to_id) REFERENCES users (id)
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
   // Reports table - one report per software incident only
@@ -81,31 +83,30 @@ db.serialize(() => {
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     software_incident_id INTEGER NOT NULL UNIQUE,
     date TEXT NOT NULL,
+    time TEXT NOT NULL,
     anomaly TEXT NOT NULL,
     analysis TEXT NOT NULL,
     conclusion TEXT NOT NULL,
-    created_by_id INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    FOREIGN KEY (software_incident_id) REFERENCES software_incidents (id),
-    FOREIGN KEY (created_by_id) REFERENCES users (id)
+    FOREIGN KEY (software_incident_id) REFERENCES software_incidents (id)
   )`);
 
   // Create default users
   const defaultPassword = bcrypt.hashSync('01010101', 10);
   const users = [
-    ['admin', defaultPassword, 'superuser', 1],
-    ['technicien1', defaultPassword, 'technicien', 1],
-    ['technicien2', defaultPassword, 'technicien', 1],
-    ['ingenieur1', defaultPassword, 'ingenieur', 1],
-    ['ingenieur2', defaultPassword, 'ingenieur', 1],
-    ['chefdep1', defaultPassword, 'chefdep', 1],
-    ['superuser1', defaultPassword, 'superuser', 1]
+    ['admin', defaultPassword, 'superuser'],
+    ['technicien1', defaultPassword, 'technicien'],
+    ['technicien2', defaultPassword, 'technicien'],
+    ['ingenieur1', defaultPassword, 'ingenieur'],
+    ['ingenieur2', defaultPassword, 'ingenieur'],
+    ['chefdep1', defaultPassword, 'chefdep'],
+    ['superuser1', defaultPassword, 'superuser']
   ];
 
   users.forEach(user => {
-    db.run(`INSERT OR IGNORE INTO users (username, password, role, is_active) 
-            VALUES (?, ?, ?, ?)`, user);
+    db.run(`INSERT OR IGNORE INTO users (username, password, role) 
+            VALUES (?, ?, ?)`, [user[0], user[1], user[2]]);
   });
 });
 
@@ -137,7 +138,7 @@ app.post('/api/auth/login/', (req, res) => {
     return res.status(400).json({ message: 'Nom d\'utilisateur et mot de passe requis' });
   }
 
-  db.get('SELECT * FROM users WHERE username = ? AND is_active = 1', [username], (err, user) => {
+  db.get('SELECT * FROM users WHERE username = ?', [username], (err, user) => {
     if (err) {
       return res.status(500).json({ message: 'Erreur de base de données' });
     }
@@ -176,12 +177,13 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
   
   if (type === 'hardware') {
     // Get hardware incidents
-    let query = 'SELECT h.*, u1.username as created_by_username, u2.username as assigned_to_username FROM hardware_incidents h LEFT JOIN users u1 ON h.created_by_id = u1.id LEFT JOIN users u2 ON h.assigned_to_id = u2.id ORDER BY h.created_at DESC';
+    let query = 'SELECT * FROM hardware_incidents ORDER BY created_at DESC';
     const params = [];
     
     db.all(query, params, (err, rows) => {
       if (err) {
-        return res.status(500).json({ message: 'Erreur de base de données' });
+        console.error('Database error fetching hardware incidents:', err);
+        return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
       }
 
       const incidents = rows.map(row => ({
@@ -189,24 +191,16 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
         incident_type: 'hardware',
         date: row.date,
         time: row.time,
-        description: row.description,
-        category: row.category,
-        location: row.location,
-        equipment_name: row.equipment_name,
+        nom_de_equipement: row.nom_de_equipement,
         partition: row.partition,
-        downtime: parseInt(row.downtime) || 0,
-        anomaly: row.anomaly,
-        action_taken: row.action_taken,
-        state_after_intervention: row.state_after_intervention,
+        numero_de_serie: row.numero_de_serie,
+        description: row.description,
+        anomalie_observee: row.anomalie_observee,
+        action_realisee: row.action_realisee,
+        piece_de_rechange_utilisee: row.piece_de_rechange_utilisee,
+        etat_de_equipement_apres_intervention: row.etat_de_equipement_apres_intervention,
         recommendation: row.recommendation,
-        created_by: {
-          id: row.created_by_id,
-          username: row.created_by_username
-        },
-        assigned_to: row.assigned_to_id ? {
-          id: row.assigned_to_id,
-          username: row.assigned_to_username
-        } : null,
+        duree_arret: row.duree_arret,
         created_at: row.created_at,
         updated_at: row.updated_at
       }));
@@ -215,12 +209,13 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
     });
   } else if (type === 'software') {
     // Get software incidents
-    let query = 'SELECT s.*, u1.username as created_by_username, u2.username as assigned_to_username FROM software_incidents s LEFT JOIN users u1 ON s.created_by_id = u1.id LEFT JOIN users u2 ON s.assigned_to_id = u2.id ORDER BY s.created_at DESC';
+    let query = 'SELECT * FROM software_incidents ORDER BY created_at DESC';
     const params = [];
     
     db.all(query, params, (err, rows) => {
       if (err) {
-        return res.status(500).json({ message: 'Erreur de base de données' });
+        console.error('Database error fetching software incidents:', err);
+        return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
       }
 
       const incidents = rows.map(row => ({
@@ -228,23 +223,26 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
         incident_type: 'software',
         date: row.date,
         time: row.time,
+        simulateur: row.simulateur === 1 || row.simulateur === true,
+        salle_operationnelle: row.salle_operationnelle === 1 || row.salle_operationnelle === true,
+        server: row.server,
+        game: row.game,
+        partition: row.partition,
+        group: row.group,
+        exercice: row.exercice,
+        secteur: row.secteur,
+        position_STA: row.position_STA,
+        position_logique: row.position_logique,
+        type_d_anomalie: row.type_d_anomalie,
+        indicatif: row.indicatif,
+        mode_radar: row.mode_radar,
+        FL: row.FL,
+        longitude: row.longitude,
+        latitude: row.latitude,
+        code_SSR: row.code_SSR,
+        sujet: row.sujet,
         description: row.description,
-        category: row.category,
-        location: row.location,
-        service_name: row.service_name,
-        software_type: row.software_type,
-        anomaly: row.anomaly,
-        action_taken: row.action_taken,
-        state_after_intervention: row.state_after_intervention,
-        recommendation: row.recommendation,
-        created_by: {
-          id: row.created_by_id,
-          username: row.created_by_username
-        },
-        assigned_to: row.assigned_to_id ? {
-          id: row.assigned_to_id,
-          username: row.assigned_to_username
-        } : null,
+        commentaires: row.commentaires,
         created_at: row.created_at,
         updated_at: row.updated_at
       }));
@@ -253,17 +251,19 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
     });
   } else {
     // Get both types
-    const hardwareQuery = 'SELECT h.*, u1.username as created_by_username, u2.username as assigned_to_username FROM hardware_incidents h LEFT JOIN users u1 ON h.created_by_id = u1.id LEFT JOIN users u2 ON h.assigned_to_id = u2.id ORDER BY h.created_at DESC';
-    const softwareQuery = 'SELECT s.*, u1.username as created_by_username, u2.username as assigned_to_username FROM software_incidents s LEFT JOIN users u1 ON s.created_by_id = u1.id LEFT JOIN users u2 ON s.assigned_to_id = u2.id ORDER BY s.created_at DESC';
+    const hardwareQuery = 'SELECT * FROM hardware_incidents ORDER BY created_at DESC';
+    const softwareQuery = 'SELECT * FROM software_incidents ORDER BY created_at DESC';
     
     db.all(hardwareQuery, [], (err, hardwareRows) => {
       if (err) {
-        return res.status(500).json({ message: 'Erreur de base de données' });
+        console.error('Database error fetching hardware incidents:', err);
+        return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
       }
       
       db.all(softwareQuery, [], (err, softwareRows) => {
         if (err) {
-          return res.status(500).json({ message: 'Erreur de base de données' });
+          console.error('Database error fetching software incidents:', err);
+          return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
         }
 
         const hardwareIncidents = hardwareRows.map(row => ({
@@ -271,24 +271,16 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
           incident_type: 'hardware',
           date: row.date,
           time: row.time,
-          description: row.description,
-          category: row.category,
-          location: row.location,
-          equipment_name: row.equipment_name,
+          nom_de_equipement: row.nom_de_equipement,
           partition: row.partition,
-          downtime: parseInt(row.downtime) || 0,
-          anomaly: row.anomaly,
-          action_taken: row.action_taken,
-          state_after_intervention: row.state_after_intervention,
+          numero_de_serie: row.numero_de_serie,
+          description: row.description,
+          anomalie_observee: row.anomalie_observee,
+          action_realisee: row.action_realisee,
+          piece_de_rechange_utilisee: row.piece_de_rechange_utilisee,
+          etat_de_equipement_apres_intervention: row.etat_de_equipement_apres_intervention,
           recommendation: row.recommendation,
-          created_by: {
-            id: row.created_by_id,
-            username: row.created_by_username
-          },
-          assigned_to: row.assigned_to_id ? {
-            id: row.assigned_to_id,
-            username: row.assigned_to_username
-          } : null,
+          duree_arret: row.duree_arret,
           created_at: row.created_at,
           updated_at: row.updated_at
         }));
@@ -298,23 +290,26 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
           incident_type: 'software',
           date: row.date,
           time: row.time,
+          simulateur: row.simulateur === 1 || row.simulateur === true,
+          salle_operationnelle: row.salle_operationnelle === 1 || row.salle_operationnelle === true,
+          server: row.server,
+          game: row.game,
+          partition: row.partition,
+          group: row.group,
+          exercice: row.exercice,
+          secteur: row.secteur,
+          position_STA: row.position_STA,
+          position_logique: row.position_logique,
+          type_d_anomalie: row.type_d_anomalie,
+          indicatif: row.indicatif,
+          mode_radar: row.mode_radar,
+          FL: row.FL,
+          longitude: row.longitude,
+          latitude: row.latitude,
+          code_SSR: row.code_SSR,
+          sujet: row.sujet,
           description: row.description,
-          category: row.category,
-          location: row.location,
-          service_name: row.service_name,
-          software_type: row.software_type,
-          anomaly: row.anomaly,
-          action_taken: row.action_taken,
-          state_after_intervention: row.state_after_intervention,
-          recommendation: row.recommendation,
-          created_by: {
-            id: row.created_by_id,
-            username: row.created_by_username
-          },
-          assigned_to: row.assigned_to_id ? {
-            id: row.assigned_to_id,
-            username: row.assigned_to_username
-          } : null,
+          commentaires: row.commentaires,
           created_at: row.created_at,
           updated_at: row.updated_at
         }));
@@ -327,69 +322,151 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
 });
 
 app.post('/api/incidents/', authenticateToken, (req, res) => {
-  const {
-    incident_type, date, time, description, category, location,
-    equipment_name, partition, service_name, downtime, software_type,
-    anomaly, action_taken, state_after_intervention, recommendation
-  } = req.body;
+  const { incident_type } = req.body;
 
-  // Set default date and time if not provided
+  // Set default date and time if not provided (GMT/UTC)
   const currentDate = new Date();
-  const defaultDate = date || currentDate.toISOString().split('T')[0];
-  const defaultTime = time || currentDate.toTimeString().split(' ')[0].substring(0, 5);
+  const defaultDate = req.body.date || currentDate.toISOString().split('T')[0];
+  // Use explicit UTC methods to ensure GMT time
+  const utcHours = String(currentDate.getUTCHours()).padStart(2, '0');
+  const utcMinutes = String(currentDate.getUTCMinutes()).padStart(2, '0');
+  const defaultTime = req.body.time || `${utcHours}:${utcMinutes}`;
 
   if (incident_type === 'hardware') {
+    const {
+      date, time, nom_de_equipement, partition, numero_de_serie,
+      description, anomalie_observee, action_realisee,
+      piece_de_rechange_utilisee, etat_de_equipement_apres_intervention, recommendation, duree_arret
+    } = req.body;
+
+    // Validate required fields
+    if (!nom_de_equipement || nom_de_equipement.trim() === '') {
+      return res.status(400).json({ message: 'Le nom de l\'équipement est requis' });
+    }
+    if (!description || description.trim() === '') {
+      return res.status(400).json({ message: 'La description est requise' });
+    }
+
+    // Handle undefined, null, or empty string values
+    const cleanValue = (val) => (val === undefined || val === null || val === '') ? null : val;
+    const cleanInt = (val) => {
+      if (val === undefined || val === null || val === '') return null;
+      const parsed = parseInt(val);
+      return isNaN(parsed) ? null : parsed;
+    };
+
     const query = `INSERT INTO hardware_incidents (
-      date, time, description, category, location,
-      equipment_name, partition, downtime,
-      anomaly, action_taken, state_after_intervention, recommendation, created_by_id
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
-    db.run(query, [
-      defaultDate, defaultTime, description, category, location,
-      equipment_name, partition, downtime || 0,
-      anomaly, action_taken, state_after_intervention, recommendation, req.user.id
-    ], function(err) {
-      if (err) {
-        return res.status(500).json({ message: 'Erreur lors de la création de l\'incident matériel' });
-      }
-
-      res.status(201).json({
-        id: this.lastID,
-        incident_type: 'hardware',
-        date: defaultDate, time: defaultTime, description, category, location,
-        equipment_name, partition, downtime: parseInt(downtime) || 0,
-        anomaly, action_taken, state_after_intervention, recommendation,
-        created_by: { id: req.user.id, username: req.user.username },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
-      });
-    });
-  } else if (incident_type === 'software') {
-    const query = `INSERT INTO software_incidents (
-      date, time, description, category, location,
-      service_name, software_type,
-      anomaly, action_taken, state_after_intervention, recommendation, created_by_id
+      date, time, nom_de_equipement, partition, numero_de_serie,
+      description, anomalie_observee, action_realisee,
+      piece_de_rechange_utilisee, etat_de_equipement_apres_intervention, recommendation, duree_arret
     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
 
     db.run(query, [
-      defaultDate, defaultTime, description, category, location,
-      service_name, software_type,
-      anomaly, action_taken, state_after_intervention, recommendation, req.user.id
+      defaultDate, defaultTime, nom_de_equipement, cleanValue(partition), cleanValue(numero_de_serie),
+      description, cleanValue(anomalie_observee), cleanValue(action_realisee),
+      cleanValue(piece_de_rechange_utilisee), cleanValue(etat_de_equipement_apres_intervention), cleanValue(recommendation), cleanInt(duree_arret)
     ], function(err) {
       if (err) {
-        return res.status(500).json({ message: 'Erreur lors de la création de l\'incident logiciel' });
+        console.error('Database error creating hardware incident:', err);
+        return res.status(500).json({ message: 'Erreur lors de la création de l\'incident matériel: ' + err.message });
       }
 
-      res.status(201).json({
-        id: this.lastID,
-        incident_type: 'software',
-        date: defaultDate, time: defaultTime, description, category, location,
-        service_name, software_type,
-        anomaly, action_taken, state_after_intervention, recommendation,
-        created_by: { id: req.user.id, username: req.user.username },
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString()
+      // Fetch the created incident
+      db.get('SELECT * FROM hardware_incidents WHERE id = ?', [this.lastID], (err, row) => {
+        if (err) {
+          return res.status(500).json({ message: 'Erreur lors de la récupération de l\'incident' });
+        }
+
+        res.status(201).json({
+          id: row.id,
+          incident_type: 'hardware',
+          date: row.date,
+          time: row.time,
+          nom_de_equipement: row.nom_de_equipement,
+          partition: row.partition,
+          numero_de_serie: row.numero_de_serie,
+          description: row.description,
+          anomalie_observee: row.anomalie_observee,
+          action_realisee: row.action_realisee,
+          piece_de_rechange_utilisee: row.piece_de_rechange_utilisee,
+          etat_de_equipement_apres_intervention: row.etat_de_equipement_apres_intervention,
+          recommendation: row.recommendation,
+          duree_arret: row.duree_arret,
+          created_at: row.created_at,
+          updated_at: row.updated_at
+        });
+      });
+    });
+  } else if (incident_type === 'software') {
+    const {
+      date, time, simulateur, salle_operationnelle, server, game, partition, group,
+      exercice, secteur, position_STA, position_logique, type_d_anomalie,
+      indicatif, mode_radar, FL, longitude, latitude, code_SSR,
+      sujet, description, commentaires
+    } = req.body;
+
+    // Validate required fields
+    if (!description || description.trim() === '') {
+      return res.status(400).json({ message: 'La description est requise' });
+    }
+
+    const query = `INSERT INTO software_incidents (
+      date, time, simulateur, salle_operationnelle, server, game, partition, "group",
+      exercice, secteur, position_STA, position_logique, type_d_anomalie,
+      indicatif, mode_radar, FL, longitude, latitude, code_SSR,
+      sujet, description, commentaires
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+    // Handle undefined, null, or empty string values
+    const cleanValue = (val) => (val === undefined || val === null || val === '') ? null : val;
+    
+    db.run(query, [
+      defaultDate, defaultTime,
+      simulateur ? 1 : 0, salle_operationnelle ? 1 : 0,
+      cleanValue(server), cleanValue(game), cleanValue(partition), cleanValue(group), cleanValue(exercice), cleanValue(secteur),
+      cleanValue(position_STA), cleanValue(position_logique), cleanValue(type_d_anomalie),
+      cleanValue(indicatif), cleanValue(mode_radar), cleanValue(FL), cleanValue(longitude), cleanValue(latitude), cleanValue(code_SSR),
+      cleanValue(sujet), description, cleanValue(commentaires)
+    ], function(err) {
+      if (err) {
+        console.error('Database error creating software incident:', err);
+        return res.status(500).json({ message: 'Erreur lors de la création de l\'incident logiciel: ' + err.message });
+      }
+
+      // Fetch the created incident
+      db.get('SELECT * FROM software_incidents WHERE id = ?', [this.lastID], (err, row) => {
+        if (err) {
+          return res.status(500).json({ message: 'Erreur lors de la récupération de l\'incident' });
+        }
+
+        res.status(201).json({
+          id: row.id,
+          incident_type: 'software',
+          date: row.date,
+          time: row.time,
+          simulateur: row.simulateur === 1 || row.simulateur === true,
+          salle_operationnelle: row.salle_operationnelle === 1 || row.salle_operationnelle === true,
+          server: row.server,
+          game: row.game,
+          partition: row.partition,
+          group: row.group,
+          exercice: row.exercice,
+          secteur: row.secteur,
+          position_STA: row.position_STA,
+          position_logique: row.position_logique,
+          type_d_anomalie: row.type_d_anomalie,
+          indicatif: row.indicatif,
+          mode_radar: row.mode_radar,
+          FL: row.FL,
+          longitude: row.longitude,
+          latitude: row.latitude,
+          code_SSR: row.code_SSR,
+          sujet: row.sujet,
+          description: row.description,
+          commentaires: row.commentaires,
+          created_at: row.created_at,
+          updated_at: row.updated_at
+        });
       });
     });
   } else {
@@ -399,58 +476,94 @@ app.post('/api/incidents/', authenticateToken, (req, res) => {
 
 app.get('/api/incidents/stats/', authenticateToken, (req, res) => {
   // Get stats from both hardware and software incidents tables
-  const hardwareQuery = 'SELECT "hardware" as incident_type, COUNT(*) as count, SUM(downtime) as total_downtime FROM hardware_incidents';
-  const softwareQuery = 'SELECT "software" as incident_type, COUNT(*) as count, 0 as total_downtime FROM software_incidents';
+  // Use SUM with CASE to handle NULL values correctly - only sum non-null values > 0
+  const hardwareQuery = `SELECT 
+    "hardware" as incident_type, 
+    COUNT(*) as count, 
+    COALESCE(SUM(CASE WHEN duree_arret IS NOT NULL AND duree_arret > 0 THEN duree_arret ELSE 0 END), 0) as total_downtime, 
+    AVG(CASE WHEN duree_arret IS NOT NULL AND duree_arret > 0 THEN duree_arret ELSE NULL END) as avg_downtime 
+    FROM hardware_incidents`;
+  const softwareQuery = 'SELECT "software" as incident_type, COUNT(*) as count FROM software_incidents';
   
   db.all(hardwareQuery, [], (err, hardwareStats) => {
     if (err) {
-      return res.status(500).json({ message: 'Erreur de base de données' });
+      console.error('Database error fetching hardware stats:', err);
+      return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
     }
     
     db.all(softwareQuery, [], (err, softwareStats) => {
       if (err) {
-        return res.status(500).json({ message: 'Erreur de base de données' });
+        console.error('Database error fetching software stats:', err);
+        return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
       }
       
-      const allStats = [...hardwareStats, ...softwareStats];
-
-      const stats = {
-        total_incidents: 0,
-        hardware_incidents: 0,
-        software_incidents: 0,
-        total_downtime_minutes: 0,
-        hardware_downtime_minutes: 0,
-        software_downtime_minutes: 0,
-        average_downtime_minutes: 0
-      };
-
-      allStats.forEach(row => {
-        stats.total_incidents += row.count;
-        stats.total_downtime_minutes += row.total_downtime || 0;
-        
-        if (row.incident_type === 'hardware') {
-          stats.hardware_incidents += row.count;
-          stats.hardware_downtime_minutes += row.total_downtime || 0;
-        } else if (row.incident_type === 'software') {
-          stats.software_incidents += row.count;
-          stats.software_downtime_minutes += row.total_downtime || 0;
+      const hardwareRow = hardwareStats[0] || {};
+      const softwareRow = softwareStats[0] || {};
+      
+      const hardwareCount = parseInt(hardwareRow.count) || 0;
+      const softwareCount = parseInt(softwareRow.count) || 0;
+      
+      // Only calculate downtime from incidents that have duree_arret set (not NULL and > 0)
+      // Don't calculate automatically - only use manually entered values
+      const totalDowntime = hardwareRow.total_downtime !== null && hardwareRow.total_downtime !== undefined 
+        ? parseInt(hardwareRow.total_downtime) || 0 
+        : 0;
+      const avgDowntime = hardwareRow.avg_downtime !== null && hardwareRow.avg_downtime !== undefined
+        ? Math.round(parseFloat(hardwareRow.avg_downtime))
+        : null;
+      
+      // Get incidents with downtime for percentage calculations
+      db.get('SELECT COUNT(*) as count FROM hardware_incidents WHERE duree_arret IS NOT NULL AND duree_arret > 0', [], (err, downtimeIncidents) => {
+        if (err) {
+          console.error('Database error counting downtime incidents:', err);
         }
+        
+        // Get recent incidents count (last 7 days, last 30 days)
+        const sevenDaysAgo = new Date();
+        sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+        
+        db.get('SELECT COUNT(*) as count FROM hardware_incidents WHERE date >= ?', [sevenDaysAgo.toISOString().split('T')[0]], (err, last7Days) => {
+          if (err) console.error('Error counting last 7 days:', err);
+          
+          db.get('SELECT COUNT(*) as count FROM hardware_incidents WHERE date >= ?', [thirtyDaysAgo.toISOString().split('T')[0]], (err, last30Days) => {
+            if (err) console.error('Error counting last 30 days:', err);
+            
+            db.get('SELECT COUNT(*) as count FROM software_incidents WHERE date >= ?', [sevenDaysAgo.toISOString().split('T')[0]], (err, softwareLast7Days) => {
+              if (err) console.error('Error counting software last 7 days:', err);
+              
+              db.get('SELECT COUNT(*) as count FROM software_incidents WHERE date >= ?', [thirtyDaysAgo.toISOString().split('T')[0]], (err, softwareLast30Days) => {
+                if (err) console.error('Error counting software last 30 days:', err);
+                
+                const stats = {
+                  total_incidents: hardwareCount + softwareCount,
+                  hardware_incidents: hardwareCount,
+                  software_incidents: softwareCount,
+                  hardware_downtime_minutes: totalDowntime,
+                  hardware_avg_downtime_minutes: avgDowntime,
+                  hardware_incidents_with_downtime: (downtimeIncidents?.count || 0),
+                  hardware_downtime_percentage: hardwareCount > 0 ? Math.round(((downtimeIncidents?.count || 0) / hardwareCount) * 100) : 0,
+                  hardware_last_7_days: (last7Days?.count || 0),
+                  hardware_last_30_days: (last30Days?.count || 0),
+                  software_last_7_days: (softwareLast7Days?.count || 0),
+                  software_last_30_days: (softwareLast30Days?.count || 0),
+                };
+
+                res.json(stats);
+              });
+            });
+          });
+        });
       });
-
-      // Calculate average downtime
-      if (stats.total_incidents > 0) {
-        stats.average_downtime_minutes = Math.round(stats.total_downtime_minutes / stats.total_incidents);
-      }
-
-      res.json(stats);
     });
   });
 });
 
 app.get('/api/incidents/recent/', authenticateToken, (req, res) => {
   // Get recent incidents from both tables
-  const hardwareQuery = 'SELECT h.*, "hardware" as incident_type, u1.username as created_by_username, u2.username as assigned_to_username FROM hardware_incidents h LEFT JOIN users u1 ON h.created_by_id = u1.id LEFT JOIN users u2 ON h.assigned_to_id = u2.id ORDER BY h.created_at DESC LIMIT 5';
-  const softwareQuery = 'SELECT s.*, "software" as incident_type, u1.username as created_by_username, u2.username as assigned_to_username FROM software_incidents s LEFT JOIN users u1 ON s.created_by_id = u1.id LEFT JOIN users u2 ON s.assigned_to_id = u2.id ORDER BY s.created_at DESC LIMIT 5';
+  const hardwareQuery = 'SELECT * FROM hardware_incidents ORDER BY created_at DESC LIMIT 5';
+  const softwareQuery = 'SELECT * FROM software_incidents ORDER BY created_at DESC LIMIT 5';
 
   db.all(hardwareQuery, [], (err, hardwareRows) => {
     if (err) {
@@ -462,8 +575,22 @@ app.get('/api/incidents/recent/', authenticateToken, (req, res) => {
         return res.status(500).json({ message: 'Erreur de base de données' });
       }
       
+      // Format hardware rows
+      const formattedHardware = hardwareRows.map(row => ({
+        ...row,
+        incident_type: 'hardware'
+      }));
+      
+      // Format software rows
+      const formattedSoftware = softwareRows.map(row => ({
+        ...row,
+        incident_type: 'software',
+        simulateur: row.simulateur === 1 || row.simulateur === true,
+        salle_operationnelle: row.salle_operationnelle === 1 || row.salle_operationnelle === true
+      }));
+      
       // Combine and sort by created_at
-      const allRows = [...hardwareRows, ...softwareRows];
+      const allRows = [...formattedHardware, ...formattedSoftware];
       allRows.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
       
       res.json(allRows.slice(0, 5));
@@ -474,27 +601,36 @@ app.get('/api/incidents/recent/', authenticateToken, (req, res) => {
 app.put('/api/incidents/hardware/:id', authenticateToken, (req, res) => {
   const { id } = req.params;
   const {
-    date, time, description, category, location,
-    equipment_name, partition, downtime,
-    anomaly, action_taken, state_after_intervention, recommendation
+    date, time, nom_de_equipement, partition, numero_de_serie,
+    description, anomalie_observee, action_realisee,
+    piece_de_rechange_utilisee, etat_de_equipement_apres_intervention, recommendation
   } = req.body;
 
-  // Set default date and time if not provided
+  // Set default date and time if not provided (GMT/UTC)
   const currentDate = new Date();
   const defaultDate = date || currentDate.toISOString().split('T')[0];
-  const defaultTime = time || currentDate.toTimeString().split(' ')[0].substring(0, 5);
+  // Use explicit UTC methods to ensure GMT time
+  const utcHours = String(currentDate.getUTCHours()).padStart(2, '0');
+  const utcMinutes = String(currentDate.getUTCMinutes()).padStart(2, '0');
+  const defaultTime = time || `${utcHours}:${utcMinutes}`;
+
+  const cleanInt = (val) => {
+    if (val === undefined || val === null || val === '') return null;
+    const parsed = parseInt(val);
+    return isNaN(parsed) ? null : parsed;
+  };
 
   const query = `UPDATE hardware_incidents SET 
-    date = ?, time = ?, description = ?, category = ?, location = ?,
-    equipment_name = ?, partition = ?, downtime = ?,
-    anomaly = ?, action_taken = ?, state_after_intervention = ?, recommendation = ?,
+    date = ?, time = ?, nom_de_equipement = ?, partition = ?, numero_de_serie = ?,
+    description = ?, anomalie_observee = ?, action_realisee = ?,
+    piece_de_rechange_utilisee = ?, etat_de_equipement_apres_intervention = ?, recommendation = ?, duree_arret = ?,
     updated_at = CURRENT_TIMESTAMP
     WHERE id = ?`;
 
   db.run(query, [
-    defaultDate, defaultTime, description, category, location,
-    equipment_name, partition, downtime || 0,
-    anomaly, action_taken, state_after_intervention, recommendation, id
+    defaultDate, defaultTime, nom_de_equipement, partition, numero_de_serie,
+    description, anomalie_observee, action_realisee,
+    piece_de_rechange_utilisee, etat_de_equipement_apres_intervention, recommendation, cleanInt(req.body.duree_arret), id
   ], function(err) {
     if (err) {
       return res.status(500).json({ message: 'Erreur lors de la mise à jour de l\'incident matériel' });
@@ -505,7 +641,7 @@ app.put('/api/incidents/hardware/:id', authenticateToken, (req, res) => {
     }
 
     // Return the updated incident
-    db.get('SELECT h.*, u.username as created_by_username FROM hardware_incidents h LEFT JOIN users u ON h.created_by_id = u.id WHERE h.id = ?', [id], (err, row) => {
+    db.get('SELECT * FROM hardware_incidents WHERE id = ?', [id], (err, row) => {
       if (err) {
         return res.status(500).json({ message: 'Erreur lors de la récupération de l\'incident' });
       }
@@ -515,17 +651,16 @@ app.put('/api/incidents/hardware/:id', authenticateToken, (req, res) => {
         incident_type: 'hardware',
         date: row.date,
         time: row.time,
-        description: row.description,
-        category: row.category,
-        location: row.location,
-        equipment_name: row.equipment_name,
+        nom_de_equipement: row.nom_de_equipement,
         partition: row.partition,
-        downtime: row.downtime,
-        anomaly: row.anomaly,
-        action_taken: row.action_taken,
-        state_after_intervention: row.state_after_intervention,
+        numero_de_serie: row.numero_de_serie,
+        description: row.description,
+        anomalie_observee: row.anomalie_observee,
+        action_realisee: row.action_realisee,
+        piece_de_rechange_utilisee: row.piece_de_rechange_utilisee,
+        etat_de_equipement_apres_intervention: row.etat_de_equipement_apres_intervention,
         recommendation: row.recommendation,
-        created_by: { id: row.created_by_id, username: row.created_by_username },
+        duree_arret: row.duree_arret,
         created_at: row.created_at,
         updated_at: row.updated_at
       });
@@ -536,27 +671,38 @@ app.put('/api/incidents/hardware/:id', authenticateToken, (req, res) => {
 app.put('/api/incidents/software/:id', authenticateToken, (req, res) => {
   const { id } = req.params;
   const {
-    date, time, description, category, location,
-    service_name, software_type,
-    anomaly, action_taken, state_after_intervention, recommendation
+    date, time, simulateur, salle_operationnelle, server, game, partition, group,
+    exercice, secteur, position_STA, position_logique, type_d_anomalie,
+    indicatif, mode_radar, FL, longitude, latitude, code_SSR,
+    sujet, description, commentaires
   } = req.body;
 
-  // Set default date and time if not provided
+  // Set default date and time if not provided (GMT/UTC)
   const currentDate = new Date();
   const defaultDate = date || currentDate.toISOString().split('T')[0];
-  const defaultTime = time || currentDate.toTimeString().split(' ')[0].substring(0, 5);
+  // Use explicit UTC methods to ensure GMT time
+  const utcHours = String(currentDate.getUTCHours()).padStart(2, '0');
+  const utcMinutes = String(currentDate.getUTCMinutes()).padStart(2, '0');
+  const defaultTime = time || `${utcHours}:${utcMinutes}`;
+
+  // Handle undefined, null, or empty string values
+  const cleanValue = (val) => (val === undefined || val === null || val === '') ? null : val;
 
   const query = `UPDATE software_incidents SET 
-    date = ?, time = ?, description = ?, category = ?, location = ?,
-    service_name = ?, software_type = ?,
-    anomaly = ?, action_taken = ?, state_after_intervention = ?, recommendation = ?,
+    date = ?, time = ?, simulateur = ?, salle_operationnelle = ?, server = ?, game = ?, partition = ?, "group" = ?,
+    exercice = ?, secteur = ?, position_STA = ?, position_logique = ?, type_d_anomalie = ?,
+    indicatif = ?, mode_radar = ?, FL = ?, longitude = ?, latitude = ?, code_SSR = ?,
+    sujet = ?, description = ?, commentaires = ?,
     updated_at = CURRENT_TIMESTAMP
     WHERE id = ?`;
 
   db.run(query, [
-    defaultDate, defaultTime, description, category, location,
-    service_name, software_type,
-    anomaly, action_taken, state_after_intervention, recommendation, id
+    defaultDate, defaultTime,
+    simulateur ? 1 : 0, salle_operationnelle ? 1 : 0,
+    cleanValue(server), cleanValue(game), cleanValue(partition), cleanValue(group), cleanValue(exercice), cleanValue(secteur),
+    cleanValue(position_STA), cleanValue(position_logique), cleanValue(type_d_anomalie),
+    cleanValue(indicatif), cleanValue(mode_radar), cleanValue(FL), cleanValue(longitude), cleanValue(latitude), cleanValue(code_SSR),
+    cleanValue(sujet), description, cleanValue(commentaires), id
   ], function(err) {
     if (err) {
       return res.status(500).json({ message: 'Erreur lors de la mise à jour de l\'incident logiciel' });
@@ -567,7 +713,7 @@ app.put('/api/incidents/software/:id', authenticateToken, (req, res) => {
     }
 
     // Return the updated incident
-    db.get('SELECT s.*, u.username as created_by_username FROM software_incidents s LEFT JOIN users u ON s.created_by_id = u.id WHERE s.id = ?', [id], (err, row) => {
+    db.get('SELECT * FROM software_incidents WHERE id = ?', [id], (err, row) => {
       if (err) {
         return res.status(500).json({ message: 'Erreur lors de la récupération de l\'incident' });
       }
@@ -577,16 +723,26 @@ app.put('/api/incidents/software/:id', authenticateToken, (req, res) => {
         incident_type: 'software',
         date: row.date,
         time: row.time,
+        simulateur: row.simulateur === 1 || row.simulateur === true,
+        salle_operationnelle: row.salle_operationnelle === 1 || row.salle_operationnelle === true,
+        server: row.server,
+        game: row.game,
+        partition: row.partition,
+        group: row.group,
+        exercice: row.exercice,
+        secteur: row.secteur,
+        position_STA: row.position_STA,
+        position_logique: row.position_logique,
+        type_d_anomalie: row.type_d_anomalie,
+        indicatif: row.indicatif,
+        mode_radar: row.mode_radar,
+        FL: row.FL,
+        longitude: row.longitude,
+        latitude: row.latitude,
+        code_SSR: row.code_SSR,
+        sujet: row.sujet,
         description: row.description,
-        category: row.category,
-        location: row.location,
-        service_name: row.service_name,
-        software_type: row.software_type,
-        anomaly: row.anomaly,
-        action_taken: row.action_taken,
-        state_after_intervention: row.state_after_intervention,
-        recommendation: row.recommendation,
-        created_by: { id: row.created_by_id, username: row.created_by_username },
+        commentaires: row.commentaires,
         created_at: row.created_at,
         updated_at: row.updated_at
       });
@@ -597,31 +753,47 @@ app.put('/api/incidents/software/:id', authenticateToken, (req, res) => {
 app.delete('/api/incidents/:id', authenticateToken, (req, res) => {
   const { id } = req.params;
 
-  db.run('DELETE FROM incidents WHERE id = ?', [id], function(err) {
+  // Try to delete from hardware_incidents first
+  db.run('DELETE FROM hardware_incidents WHERE id = ?', [id], function(err) {
     if (err) {
       return res.status(500).json({ message: 'Erreur lors de la suppression' });
     }
 
-    if (this.changes === 0) {
-      return res.status(404).json({ message: 'Incident non trouvé' });
+    if (this.changes > 0) {
+      // Also delete associated reports if any
+      db.run('DELETE FROM reports WHERE software_incident_id IN (SELECT id FROM software_incidents WHERE id = ?)', [id], () => {});
+      return res.json({ message: 'Incident matériel supprimé avec succès' });
     }
 
-    res.json({ message: 'Incident supprimé avec succès' });
+    // If not found in hardware, try software_incidents
+    db.run('DELETE FROM software_incidents WHERE id = ?', [id], function(err) {
+      if (err) {
+        return res.status(500).json({ message: 'Erreur lors de la suppression' });
+      }
+
+      if (this.changes > 0) {
+        // Also delete associated reports
+        db.run('DELETE FROM reports WHERE software_incident_id = ?', [id], () => {});
+        return res.json({ message: 'Incident logiciel supprimé avec succès' });
+      }
+
+      return res.status(404).json({ message: 'Incident non trouvé' });
+    });
   });
 });
 
 // Reports routes
 app.get('/api/reports/', authenticateToken, (req, res) => {
   const { incident } = req.query;
-  let query = 'SELECT r.*, u.username as created_by_username FROM reports r LEFT JOIN users u ON r.created_by_id = u.id WHERE 1=1';
+  let query = 'SELECT * FROM reports WHERE 1=1';
   const params = [];
 
   if (incident) {
-    query += ' AND r.software_incident_id = ?';
+    query += ' AND software_incident_id = ?';
     params.push(incident);
   }
 
-  query += ' ORDER BY r.created_at DESC';
+  query += ' ORDER BY created_at DESC';
 
   db.all(query, params, (err, rows) => {
     if (err) {
@@ -633,13 +805,10 @@ app.get('/api/reports/', authenticateToken, (req, res) => {
       incident: row.software_incident_id,
       incident_type: 'software',
       date: row.date,
+      time: row.time,
       anomaly: row.anomaly,
       analysis: row.analysis,
       conclusion: row.conclusion,
-      created_by: {
-        id: row.created_by_id,
-        username: row.created_by_username
-      },
       created_at: row.created_at,
       updated_at: row.updated_at
     }));
@@ -649,10 +818,10 @@ app.get('/api/reports/', authenticateToken, (req, res) => {
 });
 
 app.post('/api/reports/', authenticateToken, (req, res) => {
-  const { incident, date, anomaly, analysis, conclusion } = req.body;
+  const { incident, analysis, conclusion } = req.body;
 
-  // Check if the incident exists and is a software incident
-  db.get('SELECT id FROM software_incidents WHERE id = ?', [incident], (err, softwareIncident) => {
+  // Check if the incident exists and get its details to auto-fill date, time, and anomaly
+  db.get('SELECT date, time, description FROM software_incidents WHERE id = ?', [incident], (err, softwareIncident) => {
     if (err) {
       return res.status(500).json({ message: 'Erreur de base de données' });
     }
@@ -661,6 +830,12 @@ app.post('/api/reports/', authenticateToken, (req, res) => {
       return res.status(400).json({ message: 'Incident logiciel non trouvé. Les rapports ne peuvent être créés que pour les incidents logiciels.' });
     }
 
+    // Auto-fill date, time, and anomaly from the incident
+    const incidentDate = softwareIncident.date;
+    const incidentTime = softwareIncident.time;
+    // Use description as anomaly if available, otherwise use a default or from request
+    const anomaly = req.body.anomaly || softwareIncident.description || '';
+
     // Check if report already exists for this software incident
     db.get('SELECT id FROM reports WHERE software_incident_id = ?', [incident], (err, existingReport) => {
       if (err) {
@@ -668,16 +843,16 @@ app.post('/api/reports/', authenticateToken, (req, res) => {
       }
 
       if (existingReport) {
-        // Update existing report
-        const updateQuery = 'UPDATE reports SET date = ?, anomaly = ?, analysis = ?, conclusion = ?, updated_at = CURRENT_TIMESTAMP WHERE software_incident_id = ?';
+        // Update existing report - allow anomaly override but keep date/time from incident
+        const updateQuery = 'UPDATE reports SET date = ?, time = ?, anomaly = ?, analysis = ?, conclusion = ?, updated_at = CURRENT_TIMESTAMP WHERE software_incident_id = ?';
         
-        db.run(updateQuery, [date, anomaly, analysis, conclusion, incident], function(err) {
+        db.run(updateQuery, [incidentDate, incidentTime, anomaly, analysis, conclusion, incident], function(err) {
           if (err) {
             return res.status(500).json({ message: 'Erreur lors de la mise à jour du rapport' });
           }
 
           // Return the updated report
-          db.get('SELECT r.*, u.username as created_by_username FROM reports r LEFT JOIN users u ON r.created_by_id = u.id WHERE r.software_incident_id = ?', [incident], (err, row) => {
+          db.get('SELECT * FROM reports WHERE software_incident_id = ?', [incident], (err, row) => {
             if (err) {
               return res.status(500).json({ message: 'Erreur lors de la récupération du rapport' });
             }
@@ -687,23 +862,20 @@ app.post('/api/reports/', authenticateToken, (req, res) => {
               incident: row.software_incident_id,
               incident_type: 'software',
               date: row.date,
+              time: row.time,
               anomaly: row.anomaly,
               analysis: row.analysis,
               conclusion: row.conclusion,
-              created_by: {
-                id: row.created_by_id,
-                username: row.created_by_username
-              },
               created_at: row.created_at,
               updated_at: row.updated_at
             });
           });
         });
       } else {
-        // Create new report
-        const insertQuery = 'INSERT INTO reports (software_incident_id, date, anomaly, analysis, conclusion, created_by_id) VALUES (?, ?, ?, ?, ?, ?)';
+        // Create new report with auto-filled date, time, and anomaly
+        const insertQuery = 'INSERT INTO reports (software_incident_id, date, time, anomaly, analysis, conclusion) VALUES (?, ?, ?, ?, ?, ?)';
 
-        db.run(insertQuery, [incident, date, anomaly, analysis, conclusion, req.user.id], function(err) {
+        db.run(insertQuery, [incident, incidentDate, incidentTime, anomaly, analysis, conclusion], function(err) {
           if (err) {
             return res.status(500).json({ message: 'Erreur lors de la création du rapport' });
           }
@@ -712,8 +884,11 @@ app.post('/api/reports/', authenticateToken, (req, res) => {
             id: this.lastID,
             incident: incident,
             incident_type: 'software',
-            date, anomaly, analysis, conclusion,
-            created_by: { id: req.user.id, username: req.user.username },
+            date: incidentDate,
+            time: incidentTime,
+            anomaly: anomaly,
+            analysis: analysis,
+            conclusion: conclusion,
             created_at: new Date().toISOString(),
             updated_at: new Date().toISOString()
           });

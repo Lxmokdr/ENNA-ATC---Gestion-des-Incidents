@@ -8,9 +8,13 @@ export default function HardwareIncidents() {
   const navigate = useNavigate();
   const { hardwareIncidents, addHardwareIncident, deleteHardwareIncident } = useIncidents();
 
-  const handleSubmit = (data: IncidentFormData) => {
-    addHardwareIncident(data);
-    toast.success("Incident matériel ajouté avec succès");
+  const handleSubmit = async (data: IncidentFormData) => {
+    try {
+      await addHardwareIncident(data);
+      toast.success("Incident matériel ajouté avec succès");
+    } catch (error: any) {
+      toast.error(error.message || "Erreur lors de l'ajout de l'incident");
+    }
   };
 
   const handleEdit = (id: number) => {

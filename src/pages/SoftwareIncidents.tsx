@@ -8,9 +8,13 @@ export default function SoftwareIncidents() {
   const navigate = useNavigate();
   const { softwareIncidents, addSoftwareIncident, deleteSoftwareIncident, reports } = useIncidents();
 
-  const handleSubmit = (data: IncidentFormData) => {
-    addSoftwareIncident(data);
-    toast.success("Incident logiciel ajouté avec succès");
+  const handleSubmit = async (data: IncidentFormData) => {
+    try {
+      await addSoftwareIncident(data);
+      toast.success("Incident logiciel ajouté avec succès");
+    } catch (error: any) {
+      toast.error(error.message || "Erreur lors de l'ajout de l'incident");
+    }
   };
 
   const handleEdit = (id: number) => {

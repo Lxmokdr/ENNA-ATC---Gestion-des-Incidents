@@ -22,15 +22,24 @@ export function useIncidents() {
       setError(null);
 
       const [hardwareResponse, softwareResponse] = await Promise.all([
-        apiClient.getIncidents({ type: 'hardware' }),
-        apiClient.getIncidents({ type: 'software' })
+        apiClient.getIncidents({ type: 'hardware' }).catch(err => {
+          console.error("Error loading hardware incidents:", err);
+          return { results: [], count: 0 };
+        }),
+        apiClient.getIncidents({ type: 'software' }).catch(err => {
+          console.error("Error loading software incidents:", err);
+          return { results: [], count: 0 };
+        })
       ]);
 
-      setHardwareIncidents(hardwareResponse.results);
-      setSoftwareIncidents(softwareResponse.results);
+      setHardwareIncidents(hardwareResponse.results || []);
+      setSoftwareIncidents(softwareResponse.results || []);
     } catch (err: any) {
       setError(err.message || "Erreur lors du chargement des incidents");
       console.error("Error loading incidents:", err);
+      // Set empty arrays on error to prevent crashes
+      setHardwareIncidents([]);
+      setSoftwareIncidents([]);
     } finally {
       setLoading(false);
     }
@@ -42,30 +51,45 @@ export function useIncidents() {
       setStats(statsData);
     } catch (err: any) {
       console.error("Error loading stats:", err);
+      // Set default stats on error
+      setStats({
+        total_incidents: 0,
+        hardware_incidents: 0,
+        software_incidents: 0
+      });
     }
   };
 
   const addHardwareIncident = async (data: IncidentFormData) => {
     try {
+      // Ensure time is set - if not provided, use current UTC time
+      let incidentTime = data.time;
+      if (!incidentTime || incidentTime.trim() === '') {
+        const now = new Date();
+        const utcHours = String(now.getUTCHours()).padStart(2, '0');
+        const utcMinutes = String(now.getUTCMinutes()).padStart(2, '0');
+        incidentTime = `${utcHours}:${utcMinutes}`;
+      }
+      
       const incidentData = {
         incident_type: 'hardware' as const,
         date: data.date,
-        time: data.time,
-        description: data.description,
-        category: data.category,
-        location: data.location,
-        equipment_name: data.equipmentName,
+        time: incidentTime,
+        nom_de_equipement: data.nom_de_equipement,
         partition: data.partition,
-        service_name: data.serviceName,
-        anomaly: data.anomaly,
-        action_taken: data.actionTaken,
-        state_after_intervention: data.stateAfterIntervention,
+        numero_de_serie: data.numero_de_serie,
+        description: data.description,
+        anomalie_observee: data.anomalie_observee,
+        action_realisee: data.action_realisee,
+        piece_de_rechange_utilisee: data.piece_de_rechange_utilisee,
+        etat_de_equipement_apres_intervention: data.etat_de_equipement_apres_intervention,
         recommendation: data.recommendation,
-        downtime: data.downtime || 0,
+        duree_arret: data.duree_arret,
       };
 
       const newIncident = await apiClient.createIncident(incidentData);
-      setHardwareIncidents(prev => [newIncident, ...prev]);
+      // Reload all incidents to ensure we have the latest data
+      await loadIncidents();
       loadStats(); // Refresh stats
     } catch (err: any) {
       setError(err.message || "Erreur lors de la création de l'incident matériel");
@@ -75,23 +99,44 @@ export function useIncidents() {
 
   const addSoftwareIncident = async (data: IncidentFormData) => {
     try {
+      // Ensure time is set - if not provided, use current UTC time
+      let incidentTime = data.time;
+      if (!incidentTime || incidentTime.trim() === '') {
+        const now = new Date();
+        const utcHours = String(now.getUTCHours()).padStart(2, '0');
+        const utcMinutes = String(now.getUTCMinutes()).padStart(2, '0');
+        incidentTime = `${utcHours}:${utcMinutes}`;
+      }
+      
       const incidentData = {
         incident_type: 'software' as const,
         date: data.date,
-        time: data.time,
+        time: incidentTime,
+        simulateur: Boolean(data.simulateur),
+        salle_operationnelle: Boolean(data.salle_operationnelle),
+        server: data.server || undefined,
+        game: data.game || undefined,
+        partition: data.partition || undefined,
+        group: data.group || undefined,
+        exercice: data.exercice || undefined,
+        secteur: data.secteur || undefined,
+        position_STA: data.position_STA || undefined,
+        position_logique: data.position_logique || undefined,
+        type_d_anomalie: data.type_d_anomalie || undefined,
+        indicatif: data.indicatif || undefined,
+        mode_radar: data.mode_radar || undefined,
+        FL: data.FL || undefined,
+        longitude: data.longitude || undefined,
+        latitude: data.latitude || undefined,
+        code_SSR: data.code_SSR || undefined,
+        sujet: data.sujet || undefined,
         description: data.description,
-        category: data.category,
-        location: data.location,
-        service_name: data.serviceName,
-        software_type: data.softwareType,
-        anomaly: data.anomaly,
-        action_taken: data.actionTaken,
-        state_after_intervention: data.stateAfterIntervention,
-        recommendation: data.recommendation,
+        commentaires: data.commentaires || undefined,
       };
 
       const newIncident = await apiClient.createIncident(incidentData);
-      setSoftwareIncidents(prev => [newIncident, ...prev]);
+      // Reload all incidents to ensure we have the latest data
+      await loadIncidents();
       loadStats(); // Refresh stats
     } catch (err: any) {
       setError(err.message || "Erreur lors de la création de l'incident logiciel");
@@ -116,17 +161,16 @@ export function useIncidents() {
         incident_type: 'hardware' as const,
         date: data.date,
         time: data.time,
-        description: data.description,
-        category: data.category,
-        location: data.location,
-        equipment_name: data.equipmentName,
+        nom_de_equipement: data.nom_de_equipement,
         partition: data.partition,
-        service_name: data.serviceName,
-        anomaly: data.anomaly,
-        action_taken: data.actionTaken,
-        state_after_intervention: data.stateAfterIntervention,
+        numero_de_serie: data.numero_de_serie,
+        description: data.description,
+        anomalie_observee: data.anomalie_observee,
+        action_realisee: data.action_realisee,
+        piece_de_rechange_utilisee: data.piece_de_rechange_utilisee,
+        etat_de_equipement_apres_intervention: data.etat_de_equipement_apres_intervention,
         recommendation: data.recommendation,
-        downtime: data.downtime || 0,
+        duree_arret: data.duree_arret,
       };
 
       const updatedIncident = await apiClient.updateIncident(id, incidentData);
@@ -144,15 +188,26 @@ export function useIncidents() {
         incident_type: 'software' as const,
         date: data.date,
         time: data.time,
+        simulateur: data.simulateur,
+        salle_operationnelle: data.salle_operationnelle,
+        server: data.server,
+        game: data.game,
+        partition: data.partition,
+        group: data.group,
+        exercice: data.exercice,
+        secteur: data.secteur,
+        position_STA: data.position_STA,
+        position_logique: data.position_logique,
+        type_d_anomalie: data.type_d_anomalie,
+        indicatif: data.indicatif,
+        mode_radar: data.mode_radar,
+        FL: data.FL,
+        longitude: data.longitude,
+        latitude: data.latitude,
+        code_SSR: data.code_SSR,
+        sujet: data.sujet,
         description: data.description,
-        category: data.category,
-        location: data.location,
-        service_name: data.serviceName,
-        software_type: data.softwareType,
-        anomaly: data.anomaly,
-        action_taken: data.actionTaken,
-        state_after_intervention: data.stateAfterIntervention,
-        recommendation: data.recommendation,
+        commentaires: data.commentaires,
       };
 
       const updatedIncident = await apiClient.updateIncident(id, incidentData);
@@ -181,10 +236,10 @@ export function useIncidents() {
     data: { anomaly: string; analysis: string; conclusion: string }
   ) => {
     try {
+      // Date, time, and anomaly will be auto-filled by the backend from the incident
       const reportData = {
         incident: incidentId,
-        date: new Date().toISOString().split("T")[0],
-        anomaly: data.anomaly,
+        anomaly: data.anomaly, // This can be overridden, but will default to incident's commentaires
         analysis: data.analysis,
         conclusion: data.conclusion,
       };

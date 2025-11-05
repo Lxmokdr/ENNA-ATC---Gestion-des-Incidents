@@ -384,19 +384,3 @@ cd backend-simple
 node server.js
 ```
 
-## 📞 Support
-
-- **Issues** : [GitHub Issues](https://github.com/your-repo/issues)
-- **Documentation** : [Wiki du projet](https://github.com/your-repo/wiki)
-- **Email** : support@enna-atc.com
-
-## 📄 Licence
-
-Ce projet est sous licence **MIT**. Voir le fichier `LICENSE` pour plus de détails.
-
----
-
-**ENNA ATC** - Système de Gestion des Incidents Techniques  
-*Développé pour l'École Nationale de l'Aviation Civile*
-
-![ENNA Logo](https://via.placeholder.com/200x80/0066CC/FFFFFF?text=ENNA+ATC)

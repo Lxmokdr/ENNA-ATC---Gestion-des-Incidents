@@ -24,9 +24,11 @@ export default function History() {
   });
 
   const filteredIncidents = allIncidents.filter((incident) => {
+    const searchText = filters.search.toLowerCase();
     const matchesSearch =
-      incident.description.toLowerCase().includes(filters.search.toLowerCase()) ||
-      incident.location.toLowerCase().includes(filters.search.toLowerCase());
+      (incident.description || '').toLowerCase().includes(searchText) ||
+      (incident.nom_de_equipement || '').toLowerCase().includes(searchText) ||
+      (incident.sujet || '').toLowerCase().includes(searchText);
 
     const matchesType =
       filters.type === "all" ||

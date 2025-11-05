@@ -7,6 +7,8 @@ import { AuthProvider, useAuth } from "./hooks/useAuth";
 import { Layout } from "./components/Layout";
 import Login from "./pages/Login";
 import AdminDashboard from "./pages/AdminDashboard";
+import HardwareDashboard from "./pages/HardwareDashboard";
+import SoftwareDashboard from "./pages/SoftwareDashboard";
 import HardwareIncidents from "./pages/HardwareIncidents";
 import SoftwareIncidents from "./pages/SoftwareIncidents";
 import EditIncident from "./pages/EditIncident";
@@ -42,6 +44,8 @@ const AppRoutes = () => {
     <Layout>
       <Routes>
         <Route path="/" element={<AdminDashboard />} />
+        <Route path="/dashboard/hardware" element={<HardwareDashboard />} />
+        <Route path="/dashboard/software" element={<SoftwareDashboard />} />
         <Route path="/hardware" element={<HardwareIncidents />} />
         <Route path="/software" element={<SoftwareIncidents />} />
         <Route path="/incident/edit/:id" element={<EditIncident />} />

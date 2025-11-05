@@ -1,11 +1,110 @@
-import { AlertTriangle, Cpu, HardDrive } from "lucide-react";
+import { useState, useMemo } from "react";
+import { AlertTriangle, Cpu, HardDrive, Clock, TrendingUp, Calendar, ArrowUpDown, Server } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Label } from "@/components/ui/label";
 import { useIncidents } from "@/hooks/useIncidents";
 
 export default function AdminDashboard() {
   const { hardwareIncidents, softwareIncidents, stats, loading } = useIncidents();
-  const allIncidents = [...hardwareIncidents, ...softwareIncidents];
+  
+  const [hardwareSortBy, setHardwareSortBy] = useState<string>("date-desc");
+  const [softwareSortBy, setSoftwareSortBy] = useState<string>("date-desc");
+  
+  const sortedHardwareIncidents = useMemo(() => {
+    return [...hardwareIncidents].sort((a, b) => {
+      switch (hardwareSortBy) {
+        case "date-desc":
+          return new Date(b.created_at || b.date).getTime() - new Date(a.created_at || a.date).getTime();
+        case "date-asc":
+          return new Date(a.created_at || a.date).getTime() - new Date(b.created_at || b.date).getTime();
+        case "equipement-asc":
+          const eqA = a.nom_de_equipement || '';
+          const eqB = b.nom_de_equipement || '';
+          return eqA.localeCompare(eqB);
+        case "equipement-desc":
+          const eqA2 = a.nom_de_equipement || '';
+          const eqB2 = b.nom_de_equipement || '';
+          return eqB2.localeCompare(eqA2);
+        case "duree-asc":
+          const durA = a.duree_arret || 0;
+          const durB = b.duree_arret || 0;
+          return durA - durB;
+        case "duree-desc":
+          const durA2 = a.duree_arret || 0;
+          const durB2 = b.duree_arret || 0;
+          return durB2 - durA2;
+        default:
+          return 0;
+      }
+    });
+  }, [hardwareIncidents, hardwareSortBy]);
+  
+  const sortedSoftwareIncidents = useMemo(() => {
+    return [...softwareIncidents].sort((a, b) => {
+      switch (softwareSortBy) {
+        case "date-desc":
+          return new Date(b.created_at || b.date).getTime() - new Date(a.created_at || a.date).getTime();
+        case "date-asc":
+          return new Date(a.created_at || a.date).getTime() - new Date(b.created_at || b.date).getTime();
+        case "serveur-asc":
+          const srvA = a.server || '';
+          const srvB = b.server || '';
+          return srvA.localeCompare(srvB);
+        case "serveur-desc":
+          const srvA2 = a.server || '';
+          const srvB2 = b.server || '';
+          return srvB2.localeCompare(srvA2);
+        case "sujet-asc":
+          const sujetA = a.sujet || '';
+          const sujetB = b.sujet || '';
+          return sujetA.localeCompare(sujetB);
+        case "sujet-desc":
+          const sujetA2 = a.sujet || '';
+          const sujetB2 = b.sujet || '';
+          return sujetB2.localeCompare(sujetA2);
+        default:
+          return 0;
+      }
+    });
+  }, [softwareIncidents, softwareSortBy]);
+  
+  // Calculate statistics
+  const incidentsWithDowntime = useMemo(() => {
+    return hardwareIncidents.filter(i => i.duree_arret && i.duree_arret > 0);
+  }, [hardwareIncidents]);
+  
+  const serverStats = useMemo(() => {
+    const stats: Record<string, number> = {};
+    softwareIncidents.forEach(inc => {
+      if (inc.server) {
+        stats[inc.server] = (stats[inc.server] || 0) + 1;
+      }
+    });
+    return Object.entries(stats).sort((a, b) => b[1] - a[1]);
+  }, [softwareIncidents]);
+  
+  const hardwarePartitionStats = useMemo(() => {
+    const stats: Record<string, number> = {};
+    hardwareIncidents.forEach(inc => {
+      if (inc.partition) {
+        stats[inc.partition] = (stats[inc.partition] || 0) + 1;
+      }
+    });
+    return Object.entries(stats).sort((a, b) => b[1] - a[1]);
+  }, [hardwareIncidents]);
+  
+  const softwarePartitionStats = useMemo(() => {
+    const stats: Record<string, number> = {};
+    softwareIncidents.forEach(inc => {
+      if (inc.partition) {
+        stats[inc.partition] = (stats[inc.partition] || 0) + 1;
+      }
+    });
+    return Object.entries(stats).sort((a, b) => b[1] - a[1]);
+  }, [softwareIncidents]);
+  
   const totalIncidents = stats?.total_incidents || hardwareIncidents.length + softwareIncidents.length;
 
   return (
@@ -26,166 +125,280 @@ export default function AdminDashboard() {
           value={totalIncidents}
           icon={AlertTriangle}
           variant="primary"
-          trend="Dernière mise à jour: aujourd'hui"
+          trend="Tous types confondus"
         />
         <StatCard
           title="Incidents Matériels"
           value={stats?.hardware_incidents || hardwareIncidents.length}
           icon={Cpu}
           variant="accent"
+          trend={stats?.hardware_last_7_days !== undefined ? `Dont ${stats.hardware_last_7_days} ces 7 derniers jours` : undefined}
         />
         <StatCard
           title="Incidents Logiciels"
           value={stats?.software_incidents || softwareIncidents.length}
           icon={HardDrive}
           variant="warning"
+          trend={stats?.software_last_7_days !== undefined ? `Dont ${stats.software_last_7_days} ces 7 derniers jours` : undefined}
         />
         <StatCard
-          title="Temps d'arrêt matériel"
-          value={stats?.hardware_downtime_minutes || 0}
-          icon={AlertTriangle}
+          title="Temps d'arrêt total"
+          value={stats?.hardware_downtime_minutes && stats.hardware_downtime_minutes > 0 ? stats.hardware_downtime_minutes : 0}
+          icon={Clock}
           variant="warning"
-          trend={stats?.hardware_downtime_minutes ? `${Math.floor(stats.hardware_downtime_minutes / 60)}h ${stats.hardware_downtime_minutes % 60}min` : "0h 0min"}
+          trend={stats?.hardware_downtime_minutes && stats.hardware_downtime_minutes > 0 ? `${Math.floor(stats.hardware_downtime_minutes / 60)}h ${stats.hardware_downtime_minutes % 60}min` : "Aucune donnée"}
         />
       </div>
 
-      {/* Charts and Stats */}
+      {/* Secondary Metrics */}
+      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          title="Durée moyenne d'arrêt"
+          value={stats?.hardware_avg_downtime_minutes && stats.hardware_avg_downtime_minutes > 0 ? stats.hardware_avg_downtime_minutes : 0}
+          icon={TrendingUp}
+          variant="accent"
+          trend={stats?.hardware_avg_downtime_minutes && stats.hardware_avg_downtime_minutes > 0 ? `${Math.floor(stats.hardware_avg_downtime_minutes / 60)}h ${stats.hardware_avg_downtime_minutes % 60}min` : "N/A"}
+        />
+        <StatCard
+          title="Incidents avec arrêt"
+          value={stats?.hardware_incidents_with_downtime || incidentsWithDowntime.length}
+          icon={AlertTriangle}
+          variant="primary"
+          trend={stats?.hardware_downtime_percentage !== undefined 
+            ? `${stats.hardware_downtime_percentage}% des incidents matériels` 
+            : hardwareIncidents.length > 0
+              ? `${Math.round((incidentsWithDowntime.length / hardwareIncidents.length) * 100)}% des incidents`
+              : undefined}
+        />
+        <StatCard
+          title="Matériel - 30 derniers jours"
+          value={stats?.hardware_last_30_days || 0}
+          icon={Calendar}
+          variant="accent"
+        />
+        <StatCard
+          title="Logiciel - 30 derniers jours"
+          value={stats?.software_last_30_days || 0}
+          icon={Calendar}
+          variant="warning"
+        />
+      </div>
+
+      {/* Hardware Statistics */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
           <CardHeader>
-            <CardTitle>Répartition par type</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <Cpu className="h-5 w-5" />
+              Statistiques Matériel
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Matériel</span>
-                  <span className="text-sm text-muted-foreground">
-                    {stats?.hardware_incidents || hardwareIncidents.length} incidents
-                  </span>
+              {hardwarePartitionStats.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Répartition par partition</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {hardwarePartitionStats.map(([partition, count]) => (
+                      <div key={partition} className="text-center p-2 rounded-lg border border-border bg-muted/30">
+                        <div className="text-lg font-bold">{count}</div>
+                        <div className="text-xs text-muted-foreground">{partition}</div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
-                <div className="h-2 rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-accent transition-all"
-                    style={{
-                      width: `${totalIncidents > 0 ? ((stats?.hardware_incidents || hardwareIncidents.length) / totalIncidents) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm font-medium">Logiciel</span>
-                  <span className="text-sm text-muted-foreground">
-                    {stats?.software_incidents || softwareIncidents.length} incidents
-                  </span>
-                </div>
-                <div className="h-2 rounded-full bg-muted">
-                  <div
-                    className="h-full rounded-full bg-primary transition-all"
-                    style={{
-                      width: `${totalIncidents > 0 ? ((stats?.software_incidents || softwareIncidents.length) / totalIncidents) * 100 : 0}%`,
-                    }}
-                  />
-                </div>
-              </div>
+              )}
             </div>
           </CardContent>
         </Card>
 
+        {/* Software Statistics */}
         <Card>
           <CardHeader>
-            <CardTitle>Temps d'arrêt par catégorie matérielle</CardTitle>
+            <CardTitle className="flex items-center gap-2">
+              <HardDrive className="h-5 w-5" />
+              Statistiques Logiciel
+            </CardTitle>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
-              <div className="text-center text-muted-foreground">
-                <p className="text-sm">
-                  {stats?.hardware_downtime_minutes && stats.hardware_downtime_minutes > 0 
-                    ? `Total: ${Math.floor(stats.hardware_downtime_minutes / 60)}h ${stats.hardware_downtime_minutes % 60}min`
-                    : "Aucun temps d'arrêt matériel enregistré"
-                  }
-                </p>
-                {stats?.hardware_incidents && stats.hardware_incidents > 0 && (
-                  <p className="text-xs mt-1">
-                    Moyenne par incident: {Math.round(stats.hardware_downtime_minutes / stats.hardware_incidents)}min
-                  </p>
-                )}
-              </div>
+              {serverStats.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Répartition par serveur</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {serverStats.map(([server, count]) => (
+                      <div key={server} className="text-center p-2 rounded-lg border border-border bg-muted/30">
+                        <div className="text-lg font-bold">{count}</div>
+                        <div className="text-xs text-muted-foreground">{server}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+              {softwarePartitionStats.length > 0 && (
+                <div>
+                  <h4 className="text-sm font-semibold mb-2">Répartition par partition</h4>
+                  <div className="grid grid-cols-2 gap-2">
+                    {softwarePartitionStats.map(([partition, count]) => (
+                      <div key={partition} className="text-center p-2 rounded-lg border border-border bg-muted/30">
+                        <div className="text-lg font-bold">{count}</div>
+                        <div className="text-xs text-muted-foreground">{partition}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </CardContent>
         </Card>
       </div>
 
-      {/* Category Breakdown */}
+      {/* Hardware Incidents */}
       <Card>
         <CardHeader>
-          <CardTitle>Incidents par catégorie</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <Cpu className="h-5 w-5" />
+              Incidents Matériels Récents
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="sort-hardware" className="text-sm">Trier par:</Label>
+              <Select value={hardwareSortBy} onValueChange={setHardwareSortBy}>
+                <SelectTrigger id="sort-hardware" className="w-[200px]">
+                  <SelectValue placeholder="Trier..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="date-desc">Date (plus récent)</SelectItem>
+                  <SelectItem value="date-asc">Date (plus ancien)</SelectItem>
+                  <SelectItem value="equipement-asc">Équipement (A-Z)</SelectItem>
+                  <SelectItem value="equipement-desc">Équipement (Z-A)</SelectItem>
+                  <SelectItem value="duree-asc">Durée d'arrêt (croissant)</SelectItem>
+                  <SelectItem value="duree-desc">Durée d'arrêt (décroissant)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
-            {["Alimentation", "Communication", "Réseau", "Affichage Radar", "Base de données", "Serveur"].map((category) => {
-              const count = allIncidents.filter((i) => i.category === category).length;
-              const percentage =
-                allIncidents.length > 0 ? (count / allIncidents.length) * 100 : 0;
-
-              if (count === 0) return null;
-
-              return (
-                <div key={category} className="space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm font-medium">{category}</span>
-                    <span className="text-sm text-muted-foreground">{count}</span>
+          <div className="space-y-3">
+            {sortedHardwareIncidents.slice(0, 10).map((incident) => (
+              <div
+                key={incident.id}
+                className="flex items-center justify-between rounded-lg border border-border p-4 transition-colors hover:bg-muted/50"
+              >
+                <div className="space-y-1 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">#{incident.id}</span>
+                    <span className="text-sm text-muted-foreground">•</span>
+                    <span className="text-sm font-medium">
+                      {incident.nom_de_equipement || "Équipement non spécifié"}
+                    </span>
+                    {incident.partition && (
+                      <>
+                        <span className="text-sm text-muted-foreground">•</span>
+                        <span className="text-sm text-muted-foreground">
+                          Partition: {incident.partition}
+                        </span>
+                      </>
+                    )}
                   </div>
-                  <div className="h-2 rounded-full bg-muted">
-                    <div
-                      className="h-full rounded-full bg-primary transition-all"
-                      style={{ width: `${percentage}%` }}
-                    />
-                  </div>
+                  <p className="text-sm">{incident.description}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {incident.date} à {incident.time}
+                    {incident.duree_arret && incident.duree_arret > 0 && (
+                      <> • Durée d'arrêt: {Math.floor(incident.duree_arret / 60)}h {incident.duree_arret % 60}min</>
+                    )}
+                    {incident.numero_de_serie && (
+                      <> • S/N: {incident.numero_de_serie}</>
+                    )}
+                  </p>
                 </div>
-              );
-            })}
+              </div>
+            ))}
+            {sortedHardwareIncidents.length === 0 && (
+              <p className="text-center text-muted-foreground py-8">
+                Aucun incident matériel
+              </p>
+            )}
           </div>
         </CardContent>
       </Card>
 
-      {/* Recent Incidents */}
+      {/* Software Incidents */}
       <Card>
         <CardHeader>
-          <CardTitle>Incidents récents</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle className="flex items-center gap-2">
+              <HardDrive className="h-5 w-5" />
+              Incidents Logiciels Récents
+            </CardTitle>
+            <div className="flex items-center gap-2">
+              <Label htmlFor="sort-software" className="text-sm">Trier par:</Label>
+              <Select value={softwareSortBy} onValueChange={setSoftwareSortBy}>
+                <SelectTrigger id="sort-software" className="w-[200px]">
+                  <SelectValue placeholder="Trier..." />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="date-desc">Date (plus récent)</SelectItem>
+                  <SelectItem value="date-asc">Date (plus ancien)</SelectItem>
+                  <SelectItem value="serveur-asc">Serveur (A-Z)</SelectItem>
+                  <SelectItem value="serveur-desc">Serveur (Z-A)</SelectItem>
+                  <SelectItem value="sujet-asc">Sujet (A-Z)</SelectItem>
+                  <SelectItem value="sujet-desc">Sujet (Z-A)</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
         </CardHeader>
         <CardContent>
           <div className="space-y-3">
-            {allIncidents
-              .slice(0, 8)
-              .map((incident) => (
-                <div
-                  key={incident.id}
-                  className="flex items-center justify-between rounded-lg border border-border p-4 transition-colors hover:bg-muted/50"
-                >
-                  <div className="space-y-1">
-                    <div className="flex items-center gap-2">
-                      <span className="font-medium">#{incident.id}</span>
-                      <span className="text-sm text-muted-foreground">•</span>
-                      <span className="text-sm text-muted-foreground">
-                        {incident.category}
+            {sortedSoftwareIncidents.slice(0, 10).map((incident) => (
+              <div
+                key={incident.id}
+                className="flex items-center justify-between rounded-lg border border-border p-4 transition-colors hover:bg-muted/50"
+              >
+                <div className="space-y-1 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium">#{incident.id}</span>
+                    <span className="text-sm text-muted-foreground">•</span>
+                    {incident.server && (
+                      <>
+                        <span className="text-sm font-medium">
+                          Serveur: {incident.server}
+                        </span>
+                        <span className="text-sm text-muted-foreground">•</span>
+                      </>
+                    )}
+                    {incident.sujet && (
+                      <span className="text-sm font-medium">
+                        {incident.sujet}
                       </span>
-                      <span className="text-sm text-muted-foreground">•</span>
-                      <span className="text-sm text-muted-foreground">
-                        {incident.incident_type === 'hardware' ? 'Matériel' : 'Logiciel'}
-                      </span>
-                    </div>
-                    <p className="text-sm">{incident.description}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {incident.location} • {incident.date} à {incident.time}
-                    </p>
+                    )}
+                    {incident.partition && (
+                      <>
+                        <span className="text-sm text-muted-foreground">•</span>
+                        <span className="text-sm text-muted-foreground">
+                          Partition: {incident.partition}
+                        </span>
+                      </>
+                    )}
                   </div>
+                  <p className="text-sm">{incident.description}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {incident.date} à {incident.time}
+                    {incident.type_d_anomalie && (
+                      <> • Type d'anomalie: {incident.type_d_anomalie}</>
+                    )}
+                    {incident.game && (
+                      <> • Game: {incident.game}</>
+                    )}
+                  </p>
                 </div>
-              ))}
-            {allIncidents.length === 0 && (
+              </div>
+            ))}
+            {sortedSoftwareIncidents.length === 0 && (
               <p className="text-center text-muted-foreground py-8">
-                Aucun incident récent
+                Aucun incident logiciel
               </p>
             )}
           </div>

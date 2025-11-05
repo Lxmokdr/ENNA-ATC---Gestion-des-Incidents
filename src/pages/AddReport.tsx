@@ -7,7 +7,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { useIncidents } from "@/hooks/useIncidents";
 import { toast } from "sonner";
-import { ArrowLeft } from "lucide-react";
+import { ArrowLeft, Printer } from "lucide-react";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import {
   Table,
@@ -26,7 +26,7 @@ export default function AddReport() {
 
   const incident = softwareIncidents.find((i) => i.id === Number(id));
   const [formData, setFormData] = useState({
-    anomaly: "",
+    anomaly: incident?.description || "",
     analysis: "",
     conclusion: "",
   });
@@ -53,15 +53,15 @@ export default function AddReport() {
         if (incidentReports.length > 0) {
           const existingReport = incidentReports[0];
           setFormData({
-            anomaly: existingReport.anomaly || "",
+            anomaly: existingReport.anomaly || incident?.description || "",
             analysis: existingReport.analysis || "",
             conclusion: existingReport.conclusion || "",
           });
           setIsEditing(true);
         } else {
-          // Reset form if no report exists
+          // Auto-fill from incident if no report exists
           setFormData({
-            anomaly: "",
+            anomaly: incident?.description || "",
             analysis: "",
             conclusion: "",
           });
@@ -105,9 +105,149 @@ export default function AddReport() {
       // Refresh reports
       const incidentReports = await getReports(Number(id));
       setReports(incidentReports);
+      setReportDialogOpen(false);
     } catch (error) {
       toast.error(isEditing ? "Erreur lors de la modification du rapport" : "Erreur lors de l'ajout du rapport");
+      setReportDialogOpen(false);
     }
+  };
+
+  const handlePrintReport = () => {
+    if (reports.length === 0) {
+      toast.error("Aucun rapport à imprimer");
+      return;
+    }
+
+    const report = reports[0];
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+
+    const escapeHtml = (text: string) => {
+      const div = document.createElement('div');
+      div.textContent = text || '';
+      return div.innerHTML;
+    };
+
+    const partition = incident.partition || 'Non spécifiée';
+    const incidentDate = incident.date || report.date;
+
+    const htmlContent = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <meta charset="UTF-8">
+          <title>Rapport d'analyse des anomalies signalées par les ${escapeHtml(partition)}</title>
+          <style>
+            @media print {
+              @page {
+                size: A4 landscape;
+                margin: 2cm;
+              }
+            }
+            body {
+              font-family: Arial, sans-serif;
+              line-height: 1.6;
+              color: #333;
+              margin: 0;
+              padding: 20px;
+            }
+            .title {
+              text-align: center;
+              font-size: 18px;
+              font-weight: bold;
+              margin-bottom: 30px;
+              text-transform: uppercase;
+            }
+            .entete {
+              text-align: justify;
+              font-size: 14px;
+              margin-bottom: 25px;
+              line-height: 1.8;
+            }
+            .report-table {
+              width: 100%;
+              border-collapse: collapse;
+              margin-top: 20px;
+            }
+            .report-table th {
+              background-color: #333;
+              color: white;
+              padding: 12px;
+              text-align: center;
+              font-weight: bold;
+              font-size: 13px;
+              border: 1px solid #000;
+            }
+            .report-table td {
+              padding: 10px;
+              border: 1px solid #000;
+              vertical-align: top;
+              font-size: 12px;
+            }
+            .report-table td.anomalie {
+              width: 30%;
+            }
+            .report-table td.date {
+              width: 15%;
+              text-align: center;
+            }
+            .report-table td.analyse {
+              width: 27.5%;
+            }
+            .report-table td.conclusion {
+              width: 27.5%;
+            }
+            .report-table td.content {
+              white-space: pre-wrap;
+              word-wrap: break-word;
+            }
+            @media print {
+              .no-print {
+                display: none;
+              }
+              body {
+                print-color-adjust: exact;
+                -webkit-print-color-adjust: exact;
+              }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="title">
+            Rapport d'analyse des anomalies signalées par les ${escapeHtml(partition)}
+          </div>
+
+          <div class="entete">
+            J'ai l'honneur de vous faire parvenir ci-dessous les résultats des investigations relatives au formulaire de description des anomalies survenues le ${incidentDate}.
+          </div>
+
+          <table class="report-table">
+            <thead>
+              <tr>
+                <th>Anomalie</th>
+                <th>Date</th>
+                <th>Analyse</th>
+                <th>Conclusion</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td class="anomalie content">${escapeHtml(report.anomaly)}</td>
+                <td class="date">${escapeHtml(report.date)}</td>
+                <td class="analyse content">${escapeHtml(report.analysis)}</td>
+                <td class="conclusion content">${escapeHtml(report.conclusion)}</td>
+              </tr>
+            </tbody>
+          </table>
+        </body>
+      </html>
+    `;
+
+    printWindow.document.write(htmlContent);
+    printWindow.document.close();
+    printWindow.onload = () => {
+      printWindow.print();
+    };
   };
 
   if (!incident) {
@@ -169,6 +309,9 @@ export default function AddReport() {
         <p className="text-muted-foreground">
           Incident #{incident.id}: {incident.description}
         </p>
+        <p className="text-sm text-muted-foreground mt-1">
+          Un seul rapport peut être associé à cet incident logiciel.
+        </p>
       </div>
 
       <Card>
@@ -185,21 +328,9 @@ export default function AddReport() {
               <Label className="text-muted-foreground">Heure (GMT)</Label>
               <p className="font-medium">{incident.time}</p>
             </div>
-            <div>
-              <Label className="text-muted-foreground">Catégorie</Label>
-              <p className="font-medium">{incident.category}</p>
-            </div>
-            <div>
-              <Label className="text-muted-foreground">Localisation</Label>
-              <p className="font-medium">{incident.location}</p>
-            </div>
             <div className="md:col-span-2">
-              <Label className="text-muted-foreground">Description</Label>
-              <p className="font-medium">{incident.description}</p>
-            </div>
-            <div className="md:col-span-2">
-              <Label className="text-muted-foreground">Anomalie observée</Label>
-              <p className="font-medium">{incident.anomaly}</p>
+              <Label className="text-muted-foreground">Description (utilisée pour l'anomalie du rapport)</Label>
+              <p className="font-medium">{incident.description || "Aucune description"}</p>
             </div>
           </div>
         </CardContent>
@@ -217,7 +348,7 @@ export default function AddReport() {
           ) : (
             <form key={isEditing ? 'editing' : 'creating'} onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="anomaly">Anomalie observée (pré-remplie depuis l'incident)</Label>
+              <Label htmlFor="anomaly">Anomalie observée (pré-remplie depuis la description de l'incident)</Label>
               <Textarea
                 id="anomaly"
                 placeholder="Décrivez l'anomalie observée..."
@@ -228,6 +359,9 @@ export default function AddReport() {
                 required
                 rows={4}
               />
+              <p className="text-xs text-muted-foreground">
+                Cette valeur est automatiquement pré-remplie depuis la description de l'incident. Date et heure sont également pré-remplies depuis l'incident.
+              </p>
             </div>
 
             <div className="space-y-2">
@@ -268,39 +402,59 @@ export default function AddReport() {
 
       <Card>
         <CardHeader>
-          <CardTitle>Rapport de l'incident</CardTitle>
+          <div className="flex items-center justify-between">
+            <CardTitle>Rapport de l'incident</CardTitle>
+            {reports.length > 0 && (
+              <Button onClick={handlePrintReport} variant="outline" className="gap-2">
+                <Printer className="h-4 w-4" />
+                Imprimer le rapport
+              </Button>
+            )}
+          </div>
         </CardHeader>
         <CardContent>
           {reports.length === 0 ? (
             <p className="text-center text-muted-foreground py-8">
               Aucun rapport pour cet incident. Créez-en un ci-dessus.
+              <br />
+              <span className="text-xs mt-2 block">Note: Un seul rapport peut être créé par incident logiciel.</span>
             </p>
           ) : (
-            <div className="rounded-lg border">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead className="w-16">ID</TableHead>
-                    <TableHead className="w-40">Date</TableHead>
-                    <TableHead>Anomalie</TableHead>
-                    <TableHead>Conclusion</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {reports.map((report) => (
-                    <TableRow key={report.id}>
-                      <TableCell>#{report.id}</TableCell>
-                      <TableCell>{report.date}</TableCell>
-                      <TableCell className="max-w-md truncate">
-                        {report.anomaly}
-                      </TableCell>
-                      <TableCell className="max-w-md truncate">
-                        {report.conclusion}
-                      </TableCell>
+            <div className="space-y-4">
+              <div className="rounded-lg border p-4 bg-muted/30">
+                <p className="text-sm text-muted-foreground mb-4">
+                  <strong>Note:</strong> Un seul rapport peut être créé par incident logiciel. 
+                  Vous pouvez modifier le rapport existant ci-dessus.
+                </p>
+              </div>
+              <div className="rounded-lg border">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="w-16">ID</TableHead>
+                      <TableHead className="w-32">Date</TableHead>
+                      <TableHead className="w-24">Heure</TableHead>
+                      <TableHead>Anomalie</TableHead>
+                      <TableHead>Conclusion</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
+                  </TableHeader>
+                  <TableBody>
+                    {reports.map((report) => (
+                      <TableRow key={report.id}>
+                        <TableCell>#{report.id}</TableCell>
+                        <TableCell>{report.date}</TableCell>
+                        <TableCell>{report.time}</TableCell>
+                        <TableCell className="max-w-md truncate">
+                          {report.anomaly}
+                        </TableCell>
+                        <TableCell className="max-w-md truncate">
+                          {report.conclusion}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
             </div>
           )}
         </CardContent>
