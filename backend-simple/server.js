@@ -38,6 +38,7 @@ db.serialize(() => {
     nom_de_equipement TEXT NOT NULL,
     partition TEXT,
     numero_de_serie TEXT,
+    equipement_id INTEGER,
     description TEXT NOT NULL,
     anomalie_observee TEXT,
     action_realisee TEXT,
@@ -46,8 +47,23 @@ db.serialize(() => {
     recommendation TEXT,
     duree_arret INTEGER,
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (equipement_id) REFERENCES equipement(id)
   )`);
+
+  // Add equipement_id column if it doesn't exist (migration)
+  db.run(`ALTER TABLE hardware_incidents ADD COLUMN equipement_id INTEGER`, (err) => {
+    // Ignore error if column already exists
+    if (err) {
+      if (err.message.includes('duplicate column name') || err.message.includes('duplicate')) {
+        console.log('Column equipement_id already exists, skipping migration');
+      } else {
+        console.error('Error adding equipement_id column:', err);
+      }
+    } else {
+      console.log('Successfully added equipement_id column to hardware_incidents');
+    }
+  });
 
   // Software incidents table
   db.run(`CREATE TABLE IF NOT EXISTS software_incidents (
@@ -90,6 +106,17 @@ db.serialize(() => {
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (software_incident_id) REFERENCES software_incidents (id)
+  )`);
+
+  // Equipment table
+  db.run(`CREATE TABLE IF NOT EXISTS equipement (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    num_serie TEXT,
+    nom_equipement TEXT NOT NULL,
+    partition TEXT NOT NULL,
+    etat TEXT,
+    created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
   )`);
 
   // Create default users
@@ -176,8 +203,13 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
   const { type } = req.query;
   
   if (type === 'hardware') {
-    // Get hardware incidents
-    let query = 'SELECT * FROM hardware_incidents ORDER BY created_at DESC';
+    // Get hardware incidents with equipment join
+    let query = `
+      SELECT hi.*, e.nom_equipement as equipment_nom, e.partition as equipment_partition, e.num_serie as equipment_num_serie
+      FROM hardware_incidents hi
+      LEFT JOIN equipement e ON hi.equipement_id = e.id
+      ORDER BY hi.created_at DESC
+    `;
     const params = [];
     
     db.all(query, params, (err, rows) => {
@@ -194,6 +226,13 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
         nom_de_equipement: row.nom_de_equipement,
         partition: row.partition,
         numero_de_serie: row.numero_de_serie,
+        equipement_id: row.equipement_id,
+        equipment: row.equipement_id ? {
+          id: row.equipement_id,
+          nom_equipement: row.equipment_nom,
+          partition: row.equipment_partition,
+          num_serie: row.equipment_num_serie
+        } : null,
         description: row.description,
         anomalie_observee: row.anomalie_observee,
         action_realisee: row.action_realisee,
@@ -251,7 +290,12 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
     });
   } else {
     // Get both types
-    const hardwareQuery = 'SELECT * FROM hardware_incidents ORDER BY created_at DESC';
+    const hardwareQuery = `
+      SELECT hi.*, e.nom_equipement as equipment_nom, e.partition as equipment_partition, e.num_serie as equipment_num_serie
+      FROM hardware_incidents hi
+      LEFT JOIN equipement e ON hi.equipement_id = e.id
+      ORDER BY hi.created_at DESC
+    `;
     const softwareQuery = 'SELECT * FROM software_incidents ORDER BY created_at DESC';
     
     db.all(hardwareQuery, [], (err, hardwareRows) => {
@@ -274,6 +318,13 @@ app.get('/api/incidents/', authenticateToken, (req, res) => {
           nom_de_equipement: row.nom_de_equipement,
           partition: row.partition,
           numero_de_serie: row.numero_de_serie,
+          equipement_id: row.equipement_id,
+          equipment: row.equipement_id ? {
+            id: row.equipement_id,
+            nom_equipement: row.equipment_nom,
+            partition: row.equipment_partition,
+            num_serie: row.equipment_num_serie
+          } : null,
           description: row.description,
           anomalie_observee: row.anomalie_observee,
           action_realisee: row.action_realisee,
@@ -355,45 +406,104 @@ app.post('/api/incidents/', authenticateToken, (req, res) => {
       return isNaN(parsed) ? null : parsed;
     };
 
-    const query = `INSERT INTO hardware_incidents (
-      date, time, nom_de_equipement, partition, numero_de_serie,
-      description, anomalie_observee, action_realisee,
-      piece_de_rechange_utilisee, etat_de_equipement_apres_intervention, recommendation, duree_arret
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
-
-    db.run(query, [
-      defaultDate, defaultTime, nom_de_equipement, cleanValue(partition), cleanValue(numero_de_serie),
-      description, cleanValue(anomalie_observee), cleanValue(action_realisee),
-      cleanValue(piece_de_rechange_utilisee), cleanValue(etat_de_equipement_apres_intervention), cleanValue(recommendation), cleanInt(duree_arret)
-    ], function(err) {
-      if (err) {
-        console.error('Database error creating hardware incident:', err);
-        return res.status(500).json({ message: 'Erreur lors de la création de l\'incident matériel: ' + err.message });
+    // Find equipment by numero_de_serie if provided
+    const findEquipmentId = (callback) => {
+      if (!numero_de_serie || numero_de_serie.trim() === '') {
+        console.log('No serial number provided, equipement_id will be null');
+        return callback(null);
       }
+      const trimmedSerial = numero_de_serie.trim();
+      console.log(`Looking for equipment with serial number: "${trimmedSerial}"`);
+      
+      // First try to find "actuel" equipment
+      db.get(
+        'SELECT id FROM equipement WHERE TRIM(num_serie) = ? AND etat = ? ORDER BY created_at DESC LIMIT 1',
+        [trimmedSerial, 'actuel'],
+        (err, row) => {
+          if (err) {
+            console.error('Error finding equipment:', err);
+            return callback(null);
+          }
+          if (row) {
+            console.log(`Found equipment with id: ${row.id} (etat=actuel)`);
+            return callback(row.id);
+          }
+          
+          // If not found with "actuel", try without etat condition (get the latest one)
+          console.log('No "actuel" equipment found, trying without etat condition...');
+          db.get(
+            'SELECT id FROM equipement WHERE TRIM(num_serie) = ? ORDER BY created_at DESC LIMIT 1',
+            [trimmedSerial],
+            (err2, row2) => {
+              if (err2) {
+                console.error('Error finding equipment (without etat):', err2);
+                return callback(null);
+              }
+              if (row2) {
+                console.log(`Found equipment with id: ${row2.id} (any etat)`);
+                return callback(row2.id);
+              }
+              console.log(`No equipment found with serial number: "${trimmedSerial}"`);
+              callback(null);
+            }
+          );
+        }
+      );
+    };
 
-      // Fetch the created incident
-      db.get('SELECT * FROM hardware_incidents WHERE id = ?', [this.lastID], (err, row) => {
+    findEquipmentId((equipement_id) => {
+      const query = `INSERT INTO hardware_incidents (
+        date, time, nom_de_equipement, partition, numero_de_serie, equipement_id,
+        description, anomalie_observee, action_realisee,
+        piece_de_rechange_utilisee, etat_de_equipement_apres_intervention, recommendation, duree_arret
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`;
+
+      db.run(query, [
+        defaultDate, defaultTime, nom_de_equipement, cleanValue(partition), cleanValue(numero_de_serie), equipement_id,
+        description, cleanValue(anomalie_observee), cleanValue(action_realisee),
+        cleanValue(piece_de_rechange_utilisee), cleanValue(etat_de_equipement_apres_intervention), cleanValue(recommendation), cleanInt(duree_arret)
+      ], function(err) {
         if (err) {
-          return res.status(500).json({ message: 'Erreur lors de la récupération de l\'incident' });
+          console.error('Database error creating hardware incident:', err);
+          return res.status(500).json({ message: 'Erreur lors de la création de l\'incident matériel: ' + err.message });
         }
 
-        res.status(201).json({
-          id: row.id,
-          incident_type: 'hardware',
-          date: row.date,
-          time: row.time,
-          nom_de_equipement: row.nom_de_equipement,
-          partition: row.partition,
-          numero_de_serie: row.numero_de_serie,
-          description: row.description,
-          anomalie_observee: row.anomalie_observee,
-          action_realisee: row.action_realisee,
-          piece_de_rechange_utilisee: row.piece_de_rechange_utilisee,
-          etat_de_equipement_apres_intervention: row.etat_de_equipement_apres_intervention,
-          recommendation: row.recommendation,
-          duree_arret: row.duree_arret,
-          created_at: row.created_at,
-          updated_at: row.updated_at
+        // Fetch the created incident with equipment join
+        db.get(`
+          SELECT hi.*, e.nom_equipement as equipment_nom, e.partition as equipment_partition, e.num_serie as equipment_num_serie
+          FROM hardware_incidents hi
+          LEFT JOIN equipement e ON hi.equipement_id = e.id
+          WHERE hi.id = ?
+        `, [this.lastID], (err, row) => {
+          if (err) {
+            return res.status(500).json({ message: 'Erreur lors de la récupération de l\'incident' });
+          }
+
+          res.status(201).json({
+            id: row.id,
+            incident_type: 'hardware',
+            date: row.date,
+            time: row.time,
+            nom_de_equipement: row.nom_de_equipement,
+            partition: row.partition,
+            numero_de_serie: row.numero_de_serie,
+            equipement_id: row.equipement_id,
+            equipment: row.equipement_id ? {
+              id: row.equipement_id,
+              nom_equipement: row.equipment_nom,
+              partition: row.equipment_partition,
+              num_serie: row.equipment_num_serie
+            } : null,
+            description: row.description,
+            anomalie_observee: row.anomalie_observee,
+            action_realisee: row.action_realisee,
+            piece_de_rechange_utilisee: row.piece_de_rechange_utilisee,
+            etat_de_equipement_apres_intervention: row.etat_de_equipement_apres_intervention,
+            recommendation: row.recommendation,
+            duree_arret: row.duree_arret,
+            created_at: row.created_at,
+            updated_at: row.updated_at
+          });
         });
       });
     });
@@ -620,49 +730,108 @@ app.put('/api/incidents/hardware/:id', authenticateToken, (req, res) => {
     return isNaN(parsed) ? null : parsed;
   };
 
-  const query = `UPDATE hardware_incidents SET 
-    date = ?, time = ?, nom_de_equipement = ?, partition = ?, numero_de_serie = ?,
-    description = ?, anomalie_observee = ?, action_realisee = ?,
-    piece_de_rechange_utilisee = ?, etat_de_equipement_apres_intervention = ?, recommendation = ?, duree_arret = ?,
-    updated_at = CURRENT_TIMESTAMP
-    WHERE id = ?`;
-
-  db.run(query, [
-    defaultDate, defaultTime, nom_de_equipement, partition, numero_de_serie,
-    description, anomalie_observee, action_realisee,
-    piece_de_rechange_utilisee, etat_de_equipement_apres_intervention, recommendation, cleanInt(req.body.duree_arret), id
-  ], function(err) {
-    if (err) {
-      return res.status(500).json({ message: 'Erreur lors de la mise à jour de l\'incident matériel' });
+  // Find equipment by numero_de_serie if provided
+  const findEquipmentId = (callback) => {
+    if (!numero_de_serie || numero_de_serie.trim() === '') {
+      console.log('No serial number provided, equipement_id will be null');
+      return callback(null);
     }
+    const trimmedSerial = numero_de_serie.trim();
+    console.log(`Looking for equipment with serial number: "${trimmedSerial}"`);
+    
+    // First try to find "actuel" equipment
+    db.get(
+      'SELECT id FROM equipement WHERE TRIM(num_serie) = ? AND etat = ? ORDER BY created_at DESC LIMIT 1',
+      [trimmedSerial, 'actuel'],
+      (err, row) => {
+        if (err) {
+          console.error('Error finding equipment:', err);
+          return callback(null);
+        }
+        if (row) {
+          console.log(`Found equipment with id: ${row.id} (etat=actuel)`);
+          return callback(row.id);
+        }
+        
+        // If not found with "actuel", try without etat condition (get the latest one)
+        console.log('No "actuel" equipment found, trying without etat condition...');
+        db.get(
+          'SELECT id FROM equipement WHERE TRIM(num_serie) = ? ORDER BY created_at DESC LIMIT 1',
+          [trimmedSerial],
+          (err2, row2) => {
+            if (err2) {
+              console.error('Error finding equipment (without etat):', err2);
+              return callback(null);
+            }
+            if (row2) {
+              console.log(`Found equipment with id: ${row2.id} (any etat)`);
+              return callback(row2.id);
+            }
+            console.log(`No equipment found with serial number: "${trimmedSerial}"`);
+            callback(null);
+          }
+        );
+      }
+    );
+  };
 
-    if (this.changes === 0) {
-      return res.status(404).json({ message: 'Incident matériel non trouvé' });
-    }
+  findEquipmentId((equipement_id) => {
+    const query = `UPDATE hardware_incidents SET 
+      date = ?, time = ?, nom_de_equipement = ?, partition = ?, numero_de_serie = ?, equipement_id = ?,
+      description = ?, anomalie_observee = ?, action_realisee = ?,
+      piece_de_rechange_utilisee = ?, etat_de_equipement_apres_intervention = ?, recommendation = ?, duree_arret = ?,
+      updated_at = CURRENT_TIMESTAMP
+      WHERE id = ?`;
 
-    // Return the updated incident
-    db.get('SELECT * FROM hardware_incidents WHERE id = ?', [id], (err, row) => {
+    db.run(query, [
+      defaultDate, defaultTime, nom_de_equipement, partition, numero_de_serie, equipement_id,
+      description, anomalie_observee, action_realisee,
+      piece_de_rechange_utilisee, etat_de_equipement_apres_intervention, recommendation, cleanInt(req.body.duree_arret), id
+    ], function(err) {
       if (err) {
-        return res.status(500).json({ message: 'Erreur lors de la récupération de l\'incident' });
+        return res.status(500).json({ message: 'Erreur lors de la mise à jour de l\'incident matériel' });
       }
 
-      res.json({
-        id: row.id,
-        incident_type: 'hardware',
-        date: row.date,
-        time: row.time,
-        nom_de_equipement: row.nom_de_equipement,
-        partition: row.partition,
-        numero_de_serie: row.numero_de_serie,
-        description: row.description,
-        anomalie_observee: row.anomalie_observee,
-        action_realisee: row.action_realisee,
-        piece_de_rechange_utilisee: row.piece_de_rechange_utilisee,
-        etat_de_equipement_apres_intervention: row.etat_de_equipement_apres_intervention,
-        recommendation: row.recommendation,
-        duree_arret: row.duree_arret,
-        created_at: row.created_at,
-        updated_at: row.updated_at
+      if (this.changes === 0) {
+        return res.status(404).json({ message: 'Incident matériel non trouvé' });
+      }
+
+      // Return the updated incident with equipment join
+      db.get(`
+        SELECT hi.*, e.nom_equipement as equipment_nom, e.partition as equipment_partition, e.num_serie as equipment_num_serie
+        FROM hardware_incidents hi
+        LEFT JOIN equipement e ON hi.equipement_id = e.id
+        WHERE hi.id = ?
+      `, [id], (err, row) => {
+        if (err) {
+          return res.status(500).json({ message: 'Erreur lors de la récupération de l\'incident' });
+        }
+
+        res.json({
+          id: row.id,
+          incident_type: 'hardware',
+          date: row.date,
+          time: row.time,
+          nom_de_equipement: row.nom_de_equipement,
+          partition: row.partition,
+          numero_de_serie: row.numero_de_serie,
+          equipement_id: row.equipement_id,
+          equipment: row.equipement_id ? {
+            id: row.equipement_id,
+            nom_equipement: row.equipment_nom,
+            partition: row.equipment_partition,
+            num_serie: row.equipment_num_serie
+          } : null,
+          description: row.description,
+          anomalie_observee: row.anomalie_observee,
+          action_realisee: row.action_realisee,
+          piece_de_rechange_utilisee: row.piece_de_rechange_utilisee,
+          etat_de_equipement_apres_intervention: row.etat_de_equipement_apres_intervention,
+          recommendation: row.recommendation,
+          duree_arret: row.duree_arret,
+          created_at: row.created_at,
+          updated_at: row.updated_at
+        });
       });
     });
   });
@@ -833,8 +1002,11 @@ app.post('/api/reports/', authenticateToken, (req, res) => {
     // Auto-fill date, time, and anomaly from the incident
     const incidentDate = softwareIncident.date;
     const incidentTime = softwareIncident.time;
-    // Use description as anomaly if available, otherwise use a default or from request
-    const anomaly = req.body.anomaly || softwareIncident.description || '';
+    // Always use incident description as anomaly (user can override if needed)
+    // If user provided anomaly, use it; otherwise always use incident description
+    const anomaly = req.body.anomaly && req.body.anomaly.trim() !== '' 
+      ? req.body.anomaly 
+      : (softwareIncident.description || '');
 
     // Check if report already exists for this software incident
     db.get('SELECT id FROM reports WHERE software_incident_id = ?', [incident], (err, existingReport) => {
@@ -843,10 +1015,14 @@ app.post('/api/reports/', authenticateToken, (req, res) => {
       }
 
       if (existingReport) {
-        // Update existing report - allow anomaly override but keep date/time from incident
+        // Update existing report - use provided anomaly or fallback to incident description
+        // Keep date/time from incident
+        const updateAnomaly = req.body.anomaly && req.body.anomaly.trim() !== '' 
+          ? req.body.anomaly 
+          : (softwareIncident.description || existingReport.anomaly || '');
         const updateQuery = 'UPDATE reports SET date = ?, time = ?, anomaly = ?, analysis = ?, conclusion = ?, updated_at = CURRENT_TIMESTAMP WHERE software_incident_id = ?';
         
-        db.run(updateQuery, [incidentDate, incidentTime, anomaly, analysis, conclusion, incident], function(err) {
+        db.run(updateQuery, [incidentDate, incidentTime, updateAnomaly, analysis, conclusion, incident], function(err) {
           if (err) {
             return res.status(500).json({ message: 'Erreur lors de la mise à jour du rapport' });
           }
@@ -895,6 +1071,298 @@ app.post('/api/reports/', authenticateToken, (req, res) => {
         });
       }
     });
+  });
+});
+
+// Equipment endpoints
+app.get('/api/equipement/', authenticateToken, (req, res) => {
+  const { num_serie, search_serie } = req.query;
+  
+  let query = 'SELECT * FROM equipement';
+  const params = [];
+  
+  if (search_serie) {
+    // Search for serial numbers (autocomplete) - return distinct serial numbers
+    const searchQuery = `SELECT DISTINCT num_serie 
+                         FROM equipement 
+                         WHERE num_serie LIKE ? AND num_serie IS NOT NULL
+                         ORDER BY num_serie
+                         LIMIT 10`;
+    
+    db.all(searchQuery, [`%${search_serie}%`], (err, rows) => {
+      if (err) {
+        console.error('Database error searching serial numbers:', err);
+        return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
+      }
+
+      const serialNumbers = rows.map(row => row.num_serie).filter(Boolean);
+      res.json({ results: serialNumbers, count: serialNumbers.length });
+    });
+    return;
+  }
+  
+  if (num_serie) {
+    // Get the current (actuel) equipment with this serial number
+    // Use TRIM to handle whitespace issues
+    const trimmedSerial = num_serie.trim();
+    query = `SELECT * FROM equipement 
+             WHERE TRIM(num_serie) = ? AND etat = 'actuel'
+             ORDER BY created_at DESC
+             LIMIT 1`;
+    params.push(trimmedSerial);
+  } else {
+    query = 'SELECT * FROM equipement ORDER BY created_at DESC';
+  }
+  
+  if (num_serie) {
+    // Single result - get current equipment
+    db.get(query, params, (err, row) => {
+      if (err) {
+        console.error('Database error fetching equipment:', err);
+        return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
+      }
+
+      if (!row) {
+        // Try without etat condition as fallback
+        const trimmedSerial = num_serie.trim();
+        db.get(
+          `SELECT * FROM equipement 
+           WHERE TRIM(num_serie) = ?
+           ORDER BY created_at DESC
+           LIMIT 1`,
+          [trimmedSerial],
+          (err2, row2) => {
+            if (err2) {
+              return res.status(500).json({ message: 'Erreur de base de données: ' + err2.message });
+            }
+            if (!row2) {
+              return res.status(404).json({ message: 'Équipement non trouvé avec ce numéro de série' });
+            }
+            res.json({
+              id: row2.id,
+              num_serie: row2.num_serie,
+              nom_equipement: row2.nom_equipement,
+              partition: row2.partition,
+              etat: row2.etat,
+              created_at: row2.created_at,
+              updated_at: row2.updated_at
+            });
+          }
+        );
+        return;
+      }
+
+      res.json({
+        id: row.id,
+        num_serie: row.num_serie,
+        nom_equipement: row.nom_equipement,
+        partition: row.partition,
+        etat: row.etat,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      });
+    });
+  } else {
+    // Multiple results for list
+    db.all(query, params, (err, rows) => {
+      if (err) {
+        console.error('Database error fetching equipment:', err);
+        return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
+      }
+
+      const equipment = rows.map(row => ({
+        id: row.id,
+        num_serie: row.num_serie,
+        nom_equipement: row.nom_equipement,
+        partition: row.partition,
+        etat: row.etat,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      }));
+
+      res.json({ results: equipment, count: equipment.length });
+    });
+  }
+});
+
+app.get('/api/equipement/:id/', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  
+  db.get('SELECT * FROM equipement WHERE id = ?', [id], (err, row) => {
+    if (err) {
+      console.error('Database error fetching equipment:', err);
+      return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
+    }
+
+    if (!row) {
+      return res.status(404).json({ message: 'Équipement non trouvé' });
+    }
+
+    res.json({
+      id: row.id,
+      num_serie: row.num_serie,
+      nom_equipement: row.nom_equipement,
+      partition: row.partition,
+      etat: row.etat,
+      created_at: row.created_at,
+      updated_at: row.updated_at
+    });
+  });
+});
+
+app.post('/api/equipement/', authenticateToken, (req, res) => {
+  const { num_serie, nom_equipement, partition, etat } = req.body;
+
+  // Validate required fields
+  if (!nom_equipement || nom_equipement.trim() === '') {
+    return res.status(400).json({ message: 'Le nom de l\'équipement est requis' });
+  }
+  if (!partition || partition.trim() === '') {
+    return res.status(400).json({ message: 'La partition est requise' });
+  }
+
+  const cleanValue = (val) => (val === undefined || val === null || val === '') ? null : val;
+  const defaultEtat = etat && etat.trim() !== '' ? etat : 'actuel';
+
+  const query = `INSERT INTO equipement (num_serie, nom_equipement, partition, etat) VALUES (?, ?, ?, ?)`;
+
+  db.run(query, [
+    cleanValue(num_serie),
+    nom_equipement,
+    partition,
+    defaultEtat
+  ], function(err) {
+    if (err) {
+      console.error('Database error creating equipment:', err);
+      return res.status(500).json({ message: 'Erreur lors de la création de l\'équipement: ' + err.message });
+    }
+
+    // Fetch the created equipment
+    db.get('SELECT * FROM equipement WHERE id = ?', [this.lastID], (err, row) => {
+      if (err) {
+        return res.status(500).json({ message: 'Erreur lors de la récupération de l\'équipement' });
+      }
+
+      res.status(201).json({
+        id: row.id,
+        num_serie: row.num_serie,
+        nom_equipement: row.nom_equipement,
+        partition: row.partition,
+        etat: row.etat,
+        created_at: row.created_at,
+        updated_at: row.updated_at
+      });
+    });
+  });
+});
+
+app.put('/api/equipement/:id/', authenticateToken, (req, res) => {
+  const { id } = req.params;
+  const { num_serie, nom_equipement, partition } = req.body;
+
+  // Validate required fields
+  if (!nom_equipement || nom_equipement.trim() === '') {
+    return res.status(400).json({ message: 'Le nom de l\'équipement est requis' });
+  }
+  if (!partition || partition.trim() === '') {
+    return res.status(400).json({ message: 'La partition est requise' });
+  }
+
+  const cleanValue = (val) => (val === undefined || val === null || val === '') ? null : val;
+
+  // First, get the equipment being edited to find its num_serie
+  db.get('SELECT * FROM equipement WHERE id = ?', [id], (err, existingEquipment) => {
+    if (err) {
+      console.error('Database error fetching equipment:', err);
+      return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
+    }
+
+    if (!existingEquipment) {
+      return res.status(404).json({ message: 'Équipement non trouvé' });
+    }
+
+    const equipmentNumSerie = cleanValue(num_serie) || existingEquipment.num_serie;
+
+    // Find all equipment with the same num_serie that have etat = "actuel"
+    // Get the latest one (by created_at DESC)
+    const findLatestQuery = `SELECT * FROM equipement 
+                             WHERE num_serie = ? AND etat = 'actuel' 
+                             ORDER BY created_at DESC 
+                             LIMIT 1`;
+
+    db.get(findLatestQuery, [equipmentNumSerie], (err, latestEquipment) => {
+      if (err) {
+        console.error('Database error finding latest equipment:', err);
+        return res.status(500).json({ message: 'Erreur de base de données: ' + err.message });
+      }
+
+      // If there's a latest equipment with etat = "actuel", mark it as "historique"
+      if (latestEquipment) {
+        db.run('UPDATE equipement SET etat = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?', 
+          ['historique', latestEquipment.id], (err) => {
+          if (err) {
+            console.error('Database error updating equipment to historique:', err);
+            return res.status(500).json({ message: 'Erreur lors de la mise à jour de l\'état: ' + err.message });
+          }
+
+          // Now insert the new row with updated data and etat = "actuel"
+          insertNewEquipment();
+        });
+      } else {
+        // No equipment with etat = "actuel" found, just insert new one
+        insertNewEquipment();
+      }
+    });
+
+    function insertNewEquipment() {
+      const insertQuery = `INSERT INTO equipement (num_serie, nom_equipement, partition, etat) VALUES (?, ?, ?, ?)`;
+
+      db.run(insertQuery, [
+        equipmentNumSerie,
+        nom_equipement,
+        partition,
+        'actuel'
+      ], function(err) {
+        if (err) {
+          console.error('Database error creating new equipment:', err);
+          return res.status(500).json({ message: 'Erreur lors de la création du nouvel équipement: ' + err.message });
+        }
+
+        // Fetch the newly created equipment
+        db.get('SELECT * FROM equipement WHERE id = ?', [this.lastID], (err, row) => {
+          if (err) {
+            return res.status(500).json({ message: 'Erreur lors de la récupération de l\'équipement' });
+          }
+
+          res.json({
+            id: row.id,
+            num_serie: row.num_serie,
+            nom_equipement: row.nom_equipement,
+            partition: row.partition,
+            etat: row.etat,
+            created_at: row.created_at,
+            updated_at: row.updated_at
+          });
+        });
+      });
+    }
+  });
+});
+
+app.delete('/api/equipement/:id/', authenticateToken, (req, res) => {
+  const { id } = req.params;
+
+  db.run('DELETE FROM equipement WHERE id = ?', [id], function(err) {
+    if (err) {
+      console.error('Database error deleting equipment:', err);
+      return res.status(500).json({ message: 'Erreur lors de la suppression de l\'équipement: ' + err.message });
+    }
+
+    if (this.changes === 0) {
+      return res.status(404).json({ message: 'Équipement non trouvé' });
+    }
+
+    res.status(204).send();
   });
 });
 

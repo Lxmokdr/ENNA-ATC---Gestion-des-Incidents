@@ -23,6 +23,13 @@ export interface Incident {
   nom_de_equipement?: string;
   partition?: string;
   numero_de_serie?: string;
+  equipement_id?: number;
+  equipment?: {
+    id: number;
+    nom_equipement: string;
+    partition: string;
+    num_serie: string;
+  } | null;
   anomalie_observee?: string;
   action_realisee?: string;
   piece_de_rechange_utilisee?: string;
@@ -414,7 +421,16 @@ export function IncidentTable({
                 <TableCell className="max-w-md truncate">{incident.description}</TableCell>
                 {incidents.some(i => i.incident_type === 'hardware') && (
                   <TableCell className="max-w-md truncate">
-                    {incident.incident_type === 'hardware' ? (incident.nom_de_equipement || "-") : "-"}
+                    {incident.incident_type === 'hardware' ? (
+                      incident.equipment ? (
+                        <div>
+                          <div className="font-medium">{incident.equipment.nom_equipement || "-"}</div>
+                          <div className="text-xs text-muted-foreground">{incident.equipment.partition || "-"}</div>
+                        </div>
+                      ) : (
+                        <span className="text-muted-foreground">-</span>
+                      )
+                    ) : "-"}
                   </TableCell>
                 )}
                 {incidents.some(i => i.incident_type === 'software') && (

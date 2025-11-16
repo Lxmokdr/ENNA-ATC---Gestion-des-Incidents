@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useIncidents } from "@/hooks/useIncidents";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 export default function AdminDashboard() {
   const { hardwareIncidents, softwareIncidents, stats, loading } = useIncidents();
@@ -107,6 +108,81 @@ export default function AdminDashboard() {
   
   const totalIncidents = stats?.total_incidents || hardwareIncidents.length + softwareIncidents.length;
 
+  // Prepare data for charts
+  const incidentsByDay = useMemo(() => {
+    const last30Days = Array.from({ length: 30 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (29 - i));
+      const dateStr = date.toISOString().split('T')[0];
+      return {
+        date: dateStr,
+        day: date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
+        hardware: 0,
+        software: 0,
+        total: 0
+      };
+    });
+
+    [...hardwareIncidents, ...softwareIncidents].forEach(incident => {
+      const incidentDate = incident.date || incident.created_at?.split('T')[0];
+      if (incidentDate) {
+        const dayData = last30Days.find(d => d.date === incidentDate);
+        if (dayData) {
+          if (incident.incident_type === 'hardware') {
+            dayData.hardware++;
+          } else {
+            dayData.software++;
+          }
+          dayData.total++;
+        }
+      }
+    });
+
+    return last30Days;
+  }, [hardwareIncidents, softwareIncidents]);
+
+  // Pie chart data for incident types
+  const incidentTypeData = [
+    { name: 'Matériel', value: hardwareIncidents.length, color: '#3b82f6' },
+    { name: 'Logiciel', value: softwareIncidents.length, color: '#f59e0b' }
+  ];
+
+  // Bar chart data for top partitions
+  const topPartitionsData = useMemo(() => {
+    const allPartitions: Record<string, number> = {};
+    [...hardwareIncidents, ...softwareIncidents].forEach(inc => {
+      if (inc.partition) {
+        allPartitions[inc.partition] = (allPartitions[inc.partition] || 0) + 1;
+      }
+    });
+    return Object.entries(allPartitions)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([name, value]) => ({ name, value }));
+  }, [hardwareIncidents, softwareIncidents]);
+
+  // Monthly trend data
+  const monthlyTrend = useMemo(() => {
+    const months: Record<string, { hardware: number; software: number }> = {};
+    [...hardwareIncidents, ...softwareIncidents].forEach(incident => {
+      const date = new Date(incident.date || incident.created_at || Date.now());
+      const monthKey = date.toLocaleDateString('fr-FR', { month: 'short', year: 'numeric' });
+      if (!months[monthKey]) {
+        months[monthKey] = { hardware: 0, software: 0 };
+      }
+      if (incident.incident_type === 'hardware') {
+        months[monthKey].hardware++;
+      } else {
+        months[monthKey].software++;
+      }
+    });
+    return Object.entries(months)
+      .map(([month, data]) => ({ month, ...data, total: data.hardware + data.software }))
+      .slice(-6); // Last 6 months
+  }, [hardwareIncidents, softwareIncidents]);
+
+  const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899'];
+
   return (
     <div className="space-y-6">
       <div>
@@ -184,6 +260,148 @@ export default function AdminDashboard() {
         />
       </div>
 
+      {/* Charts Section */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Incidents Over Time - Line Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Évolution des incidents (30 derniers jours)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={incidentsByDay}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="day" 
+                  tick={{ fontSize: 12 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={60}
+                />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line 
+                  type="monotone" 
+                  dataKey="hardware" 
+                  stroke="#3b82f6" 
+                  strokeWidth={2}
+                  name="Matériel"
+                  dot={{ r: 4 }}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="software" 
+                  stroke="#f59e0b" 
+                  strokeWidth={2}
+                  name="Logiciel"
+                  dot={{ r: 4 }}
+                />
+                <Line 
+                  type="monotone" 
+                  dataKey="total" 
+                  stroke="#10b981" 
+                  strokeWidth={2}
+                  name="Total"
+                  strokeDasharray="5 5"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Incident Types Distribution - Pie Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <AlertTriangle className="h-5 w-5" />
+              Répartition par type d'incident
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <PieChart>
+                <Pie
+                  data={incidentTypeData}
+                  cx="50%"
+                  cy="50%"
+                  labelLine={false}
+                  label={({ name, percent }) => `${name}: ${(percent * 100).toFixed(0)}%`}
+                  outerRadius={100}
+                  fill="#8884d8"
+                  dataKey="value"
+                >
+                  {incidentTypeData.map((entry, index) => (
+                    <Cell key={`cell-${index}`} fill={entry.color} />
+                  ))}
+                </Pie>
+                <Tooltip />
+                <Legend />
+              </PieChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
+      {/* More Charts */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Top Partitions - Bar Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Server className="h-5 w-5" />
+              Top 10 Partitions (incidents)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={topPartitionsData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fontSize: 12 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="value" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Monthly Trend - Bar Chart */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Calendar className="h-5 w-5" />
+              Tendance mensuelle (6 derniers mois)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={monthlyTrend}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="month" 
+                  tick={{ fontSize: 12 }}
+                />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar dataKey="hardware" fill="#3b82f6" name="Matériel" radius={[8, 8, 0, 0]} />
+                <Bar dataKey="software" fill="#f59e0b" name="Logiciel" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+      </div>
+
       {/* Hardware Statistics */}
       <div className="grid gap-6 md:grid-cols-2">
         <Card>
@@ -199,7 +417,7 @@ export default function AdminDashboard() {
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Répartition par partition</h4>
                   <div className="grid grid-cols-2 gap-2">
-                    {hardwarePartitionStats.map(([partition, count]) => (
+                    {hardwarePartitionStats.slice(0, 6).map(([partition, count]) => (
                       <div key={partition} className="text-center p-2 rounded-lg border border-border bg-muted/30">
                         <div className="text-lg font-bold">{count}</div>
                         <div className="text-xs text-muted-foreground">{partition}</div>
@@ -226,7 +444,7 @@ export default function AdminDashboard() {
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Répartition par serveur</h4>
                   <div className="grid grid-cols-2 gap-2">
-                    {serverStats.map(([server, count]) => (
+                    {serverStats.slice(0, 6).map(([server, count]) => (
                       <div key={server} className="text-center p-2 rounded-lg border border-border bg-muted/30">
                         <div className="text-lg font-bold">{count}</div>
                         <div className="text-xs text-muted-foreground">{server}</div>
@@ -239,7 +457,7 @@ export default function AdminDashboard() {
                 <div>
                   <h4 className="text-sm font-semibold mb-2">Répartition par partition</h4>
                   <div className="grid grid-cols-2 gap-2">
-                    {softwarePartitionStats.map(([partition, count]) => (
+                    {softwarePartitionStats.slice(0, 6).map(([partition, count]) => (
                       <div key={partition} className="text-center p-2 rounded-lg border border-border bg-muted/30">
                         <div className="text-lg font-bold">{count}</div>
                         <div className="text-xs text-muted-foreground">{partition}</div>

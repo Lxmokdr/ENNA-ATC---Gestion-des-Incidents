@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -11,11 +11,14 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { apiClient, Equipment } from "@/services/api";
+import { toast } from "sonner";
 
 interface IncidentFormProps {
   onSubmit: (data: IncidentFormData) => void;
   type: "hardware" | "software";
   title?: string;
+  initialData?: Partial<IncidentFormData>;
 }
 
 export interface IncidentFormData {
@@ -53,62 +56,75 @@ export interface IncidentFormData {
   commentaires?: string;
 }
 
-export function IncidentForm({ onSubmit, type, title }: IncidentFormProps) {
+export function IncidentForm({ onSubmit, type, title, initialData }: IncidentFormProps) {
   const [modeRadarCategory, setModeRadarCategory] = useState<string>("");
+  const [equipmentLoading, setEquipmentLoading] = useState(false);
+  const [availableSerialNumbers, setAvailableSerialNumbers] = useState<string[]>([]);
   const [formData, setFormData] = useState<IncidentFormData>({
-    date: "",
-    time: "",
-    description: "",
-    nom_de_equipement: "",
-    partition: "",
-    numero_de_serie: "",
-    anomalie_observee: "",
-    action_realisee: "",
-    piece_de_rechange_utilisee: "",
-    etat_de_equipement_apres_intervention: "",
-      recommendation: "",
-      duree_arret: undefined,
-      simulateur: false,
-      salle_operationnelle: false,
-      server: "",
-      game: "",
-    group: "",
-    exercice: "",
-    secteur: "",
-    position_STA: "",
-    position_logique: "",
-    type_d_anomalie: "",
-    indicatif: "",
-    mode_radar: "",
-    FL: "",
-    longitude: "",
-    latitude: "",
-    code_SSR: "",
-    sujet: "",
-    commentaires: "",
+    date: initialData?.date || "",
+    time: initialData?.time || "",
+    description: initialData?.description || "",
+    nom_de_equipement: initialData?.nom_de_equipement || "",
+    partition: initialData?.partition || "",
+    numero_de_serie: initialData?.numero_de_serie || "",
+    anomalie_observee: initialData?.anomalie_observee || "",
+    action_realisee: initialData?.action_realisee || "",
+    piece_de_rechange_utilisee: initialData?.piece_de_rechange_utilisee || "",
+    etat_de_equipement_apres_intervention: initialData?.etat_de_equipement_apres_intervention || "",
+      recommendation: initialData?.recommendation || "",
+      duree_arret: initialData?.duree_arret || undefined,
+      simulateur: initialData?.simulateur || false,
+      salle_operationnelle: initialData?.salle_operationnelle || false,
+      server: initialData?.server || "",
+      game: initialData?.game || "",
+    group: initialData?.group || "",
+    exercice: initialData?.exercice || "",
+    secteur: initialData?.secteur || "",
+    position_STA: initialData?.position_STA || "",
+    position_logique: initialData?.position_logique || "",
+    type_d_anomalie: initialData?.type_d_anomalie || "",
+    indicatif: initialData?.indicatif || "",
+    mode_radar: initialData?.mode_radar || "",
+    FL: initialData?.FL || "",
+    longitude: initialData?.longitude || "",
+    latitude: initialData?.latitude || "",
+    code_SSR: initialData?.code_SSR || "",
+    sujet: initialData?.sujet || "",
+    commentaires: initialData?.commentaires || "",
   });
+
+  // Update form data when initialData changes (for editing)
+  useEffect(() => {
+    if (initialData && Object.keys(initialData).length > 0) {
+      setFormData(prev => ({
+        ...prev,
+        ...initialData,
+      }));
+    }
+  }, [initialData?.date, initialData?.time, initialData?.description, initialData?.numero_de_serie, initialData?.nom_de_equipement, initialData?.partition]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     onSubmit(formData);
-    // Reset form
-    setFormData({
-      date: "",
-      time: "",
-      description: "",
-      nom_de_equipement: "",
-      partition: "",
-      numero_de_serie: "",
-      anomalie_observee: "",
-      action_realisee: "",
-      piece_de_rechange_utilisee: "",
-      etat_de_equipement_apres_intervention: "",
-      recommendation: "",
-      duree_arret: undefined,
-      simulateur: false,
-      salle_operationnelle: false,
-      server: "",
-      game: "",
+    // Only reset form if not editing (no initialData)
+    if (!initialData) {
+      setFormData({
+        date: "",
+        time: "",
+        description: "",
+        nom_de_equipement: "",
+        partition: "",
+        numero_de_serie: "",
+        anomalie_observee: "",
+        action_realisee: "",
+        piece_de_rechange_utilisee: "",
+        etat_de_equipement_apres_intervention: "",
+        recommendation: "",
+        duree_arret: undefined,
+        simulateur: false,
+        salle_operationnelle: false,
+        server: "",
+        game: "",
       group: "",
       exercice: "",
       secteur: "",
@@ -123,8 +139,123 @@ export function IncidentForm({ onSubmit, type, title }: IncidentFormProps) {
       code_SSR: "",
       sujet: "",
       commentaires: "",
-    });
-    setModeRadarCategory("");
+      });
+      setModeRadarCategory("");
+    }
+  };
+
+  // Fetch equipment details when serial number is selected/entered
+  const fetchEquipmentBySerial = useCallback(async (serialNumber: string) => {
+    if (!serialNumber || serialNumber.trim().length === 0) {
+      setFormData(prev => ({
+        ...prev,
+        nom_de_equipement: "",
+        partition: "",
+      }));
+      return;
+    }
+
+    setEquipmentLoading(true);
+    try {
+      const trimmedSerial = serialNumber.trim();
+      const result = await apiClient.getEquipment({ num_serie: trimmedSerial });
+      
+      // Backend returns Equipment object directly when searching by exact num_serie
+      let equipment: Equipment | null = null;
+      
+      // Check if result is a direct Equipment object
+      if (result && typeof result === 'object') {
+        if ('nom_equipement' in result) {
+          // Direct Equipment object
+          equipment = result as Equipment;
+        } else if ('results' in result) {
+          // Wrapped in results array (shouldn't happen for num_serie, but handle it)
+          const resultsObj = result as { results: Equipment[] | string[] };
+          if (Array.isArray(resultsObj.results) && resultsObj.results.length > 0) {
+            const firstItem = resultsObj.results[0];
+            if (typeof firstItem === 'object' && firstItem !== null && 'nom_equipement' in firstItem) {
+              equipment = firstItem as Equipment;
+            }
+          }
+        }
+      }
+      
+      if (equipment && equipment.nom_equipement) {
+        // Update form data with equipment details
+        setFormData(prev => ({
+          ...prev,
+          nom_de_equipement: equipment.nom_equipement,
+          partition: equipment.partition || "",
+        }));
+      } else {
+        // No equipment found - clear fields
+        setFormData(prev => ({
+          ...prev,
+          nom_de_equipement: "",
+          partition: "",
+        }));
+      }
+    } catch (error: any) {
+      console.error('Error fetching equipment by serial number:', error);
+      // Equipment not found - clear fields
+      setFormData(prev => ({
+        ...prev,
+        nom_de_equipement: "",
+        partition: "",
+      }));
+    } finally {
+      setEquipmentLoading(false);
+    }
+  }, []);
+
+  // Load all available serial numbers on mount for hardware incidents
+  useEffect(() => {
+    if (type === "hardware") {
+      const loadAllSerialNumbers = async () => {
+        try {
+          setEquipmentLoading(true);
+          // Get all equipment and extract unique serial numbers
+          const result = await apiClient.getEquipment();
+          if (result && typeof result === 'object' && 'results' in result && Array.isArray(result.results)) {
+            const equipmentList = result.results.filter((item): item is Equipment => 
+              typeof item === 'object' && item !== null && 'nom_equipement' in item
+            );
+            // Get unique serial numbers (only from current equipment with etat = 'actuel')
+            const currentEquipment = equipmentList.filter(eq => eq.etat === 'actuel' && eq.num_serie);
+            const uniqueSerials = Array.from(new Set(currentEquipment.map(eq => eq.num_serie).filter(Boolean))) as string[];
+            setAvailableSerialNumbers(uniqueSerials.sort());
+          } else {
+            setAvailableSerialNumbers([]);
+          }
+        } catch (error: any) {
+          console.error('Error loading serial numbers:', error);
+          setAvailableSerialNumbers([]);
+        } finally {
+          setEquipmentLoading(false);
+        }
+      };
+      loadAllSerialNumbers();
+    } else {
+      setAvailableSerialNumbers([]);
+    }
+  }, [type]);
+
+  // Handle serial number selection from dropdown
+  const handleSerialNumberSelect = (serialNumber: string) => {
+    // Don't process if it's the placeholder value
+    if (serialNumber === "__no_equipment__" || !serialNumber) {
+      return;
+    }
+    const currentSerial = formData.numero_de_serie;
+    setFormData(prev => ({
+      ...prev,
+      numero_de_serie: serialNumber,
+    }));
+    // Automatically fetch equipment details when serial number is selected
+    // Only if it's different from current value (to avoid refetching when editing)
+    if (serialNumber && serialNumber.trim().length > 0 && serialNumber !== currentSerial) {
+      fetchEquipmentBySerial(serialNumber);
+    }
   };
 
   return (
@@ -178,48 +309,84 @@ export function IncidentForm({ onSubmit, type, title }: IncidentFormProps) {
           {type === "hardware" && (
             <>
               <div className="space-y-2">
-                <Label htmlFor="nom_de_equipement">Nom de l'équipement</Label>
-                <Select
-                  value={formData.nom_de_equipement || ""}
-                  onValueChange={(value) =>
-                    setFormData({ ...formData, nom_de_equipement: value })
-                  }
-                  required
-                >
-                  <SelectTrigger>
-                    <SelectValue placeholder="Sélectionner un équipement" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="radar">Radar</SelectItem>
-                    <SelectItem value="FDP">FDP</SelectItem>
-                    <SelectItem value="AGP">AGP</SelectItem>
-                    <SelectItem value="SNMAP">SNMAP</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label htmlFor="numero_de_serie">Numéro de série *</Label>
+                {equipmentLoading && availableSerialNumbers.length === 0 ? (
+                  <div className="flex items-center gap-2">
+                    <Select disabled>
+                      <SelectTrigger>
+                        <SelectValue placeholder="Chargement des équipements..." />
+                      </SelectTrigger>
+                    </Select>
+                  </div>
+                ) : (
+                  <Select
+                    value={formData.numero_de_serie && availableSerialNumbers.includes(formData.numero_de_serie) 
+                      ? formData.numero_de_serie 
+                      : ""}
+                    onValueChange={handleSerialNumberSelect}
+                    required
+                    disabled={equipmentLoading}
+                  >
+                    <SelectTrigger>
+                      <SelectValue placeholder="Sélectionner un numéro de série" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {availableSerialNumbers.length === 0 ? (
+                        <SelectItem value="__no_equipment__" disabled>
+                          Aucun équipement disponible
+                        </SelectItem>
+                      ) : (
+                        availableSerialNumbers.map((serial) => (
+                          <SelectItem key={serial} value={serial}>
+                            {serial}
+                          </SelectItem>
+                        ))
+                      )}
+                    </SelectContent>
+                  </Select>
+                )}
+                {equipmentLoading && formData.numero_de_serie && (
+                  <p className="text-xs text-muted-foreground">Chargement de l'équipement...</p>
+                )}
+                <p className="text-xs text-muted-foreground">
+                  Sélectionnez un numéro de série pour remplir automatiquement les champs
+                </p>
               </div>
 
               <div className="grid grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="partition">Partition</Label>
+                  <Label htmlFor="nom_de_equipement">Nom de l'équipement *</Label>
+                  <Input
+                    id="nom_de_equipement"
+                    value={formData.nom_de_equipement || ""}
+                    onChange={(e) =>
+                      setFormData({ ...formData, nom_de_equipement: e.target.value })
+                    }
+                    required
+                    readOnly={!!formData.nom_de_equipement && formData.nom_de_equipement.length > 0}
+                    placeholder="Rempli automatiquement"
+                    className={formData.nom_de_equipement ? "bg-muted" : ""}
+                  />
+                  {formData.nom_de_equipement && (
+                    <p className="text-xs text-green-600">✓ Rempli automatiquement</p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="partition">Partition *</Label>
                   <Input
                     id="partition"
-                    placeholder="Ex: Partition A"
                     value={formData.partition || ""}
                     onChange={(e) =>
                       setFormData({ ...formData, partition: e.target.value })
                     }
+                    required
+                    readOnly={!!formData.partition && formData.partition.length > 0}
+                    placeholder="Rempli automatiquement"
+                    className={formData.partition ? "bg-muted" : ""}
                   />
-                </div>
-                <div className="space-y-2">
-                  <Label htmlFor="numero_de_serie">Numéro de série</Label>
-                  <Input
-                    id="numero_de_serie"
-                    placeholder="Ex: SN123456"
-                    value={formData.numero_de_serie || ""}
-                    onChange={(e) =>
-                      setFormData({ ...formData, numero_de_serie: e.target.value })
-                    }
-                  />
+                  {formData.partition && (
+                    <p className="text-xs text-green-600">✓ Rempli automatiquement</p>
+                  )}
                 </div>
               </div>
 

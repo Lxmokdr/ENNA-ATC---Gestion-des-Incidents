@@ -1,11 +1,12 @@
 import { NavLink } from "react-router-dom";
-import { Home, Cpu, HardDrive, FileText, History } from "lucide-react";
+import { Home, Cpu, HardDrive, FileText, History, Server } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const navigation = [
   { name: "Tableau de bord", href: "/", icon: Home },
   { name: "Incidents Hardware", href: "/hardware", icon: Cpu },
   { name: "Incidents Software", href: "/software", icon: HardDrive },
+  { name: "Équipements", href: "/equipment", icon: Server },
   { name: "Historique Global", href: "/history", icon: History },
 ];
 

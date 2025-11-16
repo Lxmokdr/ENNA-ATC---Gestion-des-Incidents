@@ -25,6 +25,7 @@ export default function AddReport() {
   const [reports, setReports] = useState<any[]>([]);
 
   const incident = softwareIncidents.find((i) => i.id === Number(id));
+  // Initialize form with incident description for anomaly
   const [formData, setFormData] = useState({
     anomaly: incident?.description || "",
     analysis: "",
@@ -60,6 +61,7 @@ export default function AddReport() {
           setIsEditing(true);
         } else {
           // Auto-fill from incident if no report exists
+          // Always use incident description for anomaly
           setFormData({
             anomaly: incident?.description || "",
             analysis: "",
@@ -83,6 +85,20 @@ export default function AddReport() {
     };
     loadReports();
   }, [id, getReports]);
+
+  // Update anomaly field when incident is loaded or changes
+  // Always pre-fill with incident description when creating a new report
+  useEffect(() => {
+    if (incident && incident.description) {
+      // Always use incident description when creating a new report (not editing)
+      if (!isEditing) {
+        setFormData(prev => ({
+          ...prev,
+          anomaly: incident.description || "",
+        }));
+      }
+    }
+  }, [incident, isEditing]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();

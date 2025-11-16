@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useIncidents } from "@/hooks/useIncidents";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 export default function HardwareDashboard() {
   const { hardwareIncidents, stats, loading } = useIncidents();
@@ -52,6 +53,50 @@ export default function HardwareDashboard() {
       ? Math.round(totalDowntime / incidentsWithDowntime.length) 
       : 0;
   }, [incidentsWithDowntime, totalDowntime]);
+
+  // Prepare chart data
+  const incidentsByDay = useMemo(() => {
+    const last30Days = Array.from({ length: 30 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (29 - i));
+      const dateStr = date.toISOString().split('T')[0];
+      return {
+        date: dateStr,
+        day: date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
+        incidents: 0,
+        downtime: 0
+      };
+    });
+
+    hardwareIncidents.forEach(incident => {
+      const incidentDate = incident.date || incident.created_at?.split('T')[0];
+      if (incidentDate) {
+        const dayData = last30Days.find(d => d.date === incidentDate);
+        if (dayData) {
+          dayData.incidents++;
+          if (incident.duree_arret) {
+            dayData.downtime += incident.duree_arret;
+          }
+        }
+      }
+    });
+
+    return last30Days;
+  }, [hardwareIncidents]);
+
+  const partitionData = useMemo(() => {
+    const stats: Record<string, number> = {};
+    hardwareIncidents.forEach(inc => {
+      const partition = inc.partition || inc.equipment?.partition || 'Non spécifié';
+      stats[partition] = (stats[partition] || 0) + 1;
+    });
+    return Object.entries(stats)
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 10)
+      .map(([name, value]) => ({ name, value }));
+  }, [hardwareIncidents]);
+
+  const COLORS = ['#3b82f6', '#f59e0b', '#10b981', '#ef4444', '#8b5cf6', '#ec4899', '#06b6d4', '#84cc16'];
 
   return (
     <div className="space-y-6">
@@ -106,6 +151,82 @@ export default function HardwareDashboard() {
               ? `${Math.round((incidentsWithDowntime.length / hardwareIncidents.length) * 100)}% des incidents`
               : undefined}
         />
+      </div>
+
+      {/* Charts Section */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Incidents Over Time */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Évolution des incidents (30 derniers jours)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={incidentsByDay}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="day" 
+                  tick={{ fontSize: 12 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={60}
+                />
+                <YAxis yAxisId="left" />
+                <YAxis yAxisId="right" orientation="right" />
+                <Tooltip />
+                <Legend />
+                <Line 
+                  yAxisId="left"
+                  type="monotone" 
+                  dataKey="incidents" 
+                  stroke="#3b82f6" 
+                  strokeWidth={2}
+                  name="Incidents"
+                  dot={{ r: 4 }}
+                />
+                <Line 
+                  yAxisId="right"
+                  type="monotone" 
+                  dataKey="downtime" 
+                  stroke="#ef4444" 
+                  strokeWidth={2}
+                  name="Temps d'arrêt (min)"
+                  strokeDasharray="5 5"
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Partition Distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Cpu className="h-5 w-5" />
+              Répartition par partition
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={partitionData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fontSize: 12 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="value" fill="#3b82f6" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Secondary Metrics */}

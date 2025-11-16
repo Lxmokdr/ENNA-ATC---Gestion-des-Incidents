@@ -20,6 +20,13 @@ export interface Incident {
   nom_de_equipement?: string;
   partition?: string;
   numero_de_serie?: string;
+  equipement_id?: number;
+  equipment?: {
+    id: number;
+    nom_equipement: string;
+    partition: string;
+    num_serie: string;
+  } | null;
   anomalie_observee?: string;
   action_realisee?: string;
   piece_de_rechange_utilisee?: string;
@@ -58,6 +65,16 @@ export interface Report {
   anomaly: string;
   analysis: string;
   conclusion: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface Equipment {
+  id: number;
+  num_serie?: string;
+  nom_equipement: string;
+  partition: string;
+  etat?: string;
   created_at: string;
   updated_at: string;
 }
@@ -264,6 +281,42 @@ class ApiClient {
 
   async deleteReport(id: number): Promise<void> {
     await this.request(`/reports/${id}/`, {
+      method: 'DELETE',
+    });
+  }
+
+  // Equipment
+  async getEquipment(params?: { num_serie?: string; search_serie?: string }): Promise<{ results: Equipment[]; count: number } | Equipment | { results: string[]; count: number }> {
+    const searchParams = new URLSearchParams();
+    if (params?.num_serie) searchParams.set('num_serie', params.num_serie);
+    if (params?.search_serie) searchParams.set('search_serie', params.search_serie);
+    
+    const queryString = searchParams.toString();
+    const endpoint = queryString ? `/equipement/?${queryString}` : '/equipement/';
+    
+    return this.request<{ results: Equipment[]; count: number } | Equipment | { results: string[]; count: number }>(endpoint);
+  }
+
+  async getEquipmentItem(id: number): Promise<Equipment> {
+    return this.request<Equipment>(`/equipement/${id}/`);
+  }
+
+  async createEquipment(equipmentData: Omit<Equipment, 'id' | 'created_at' | 'updated_at'>): Promise<Equipment> {
+    return this.request<Equipment>('/equipement/', {
+      method: 'POST',
+      body: JSON.stringify(equipmentData),
+    });
+  }
+
+  async updateEquipment(id: number, equipmentData: Partial<Equipment>): Promise<Equipment> {
+    return this.request<Equipment>(`/equipement/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify(equipmentData),
+    });
+  }
+
+  async deleteEquipment(id: number): Promise<void> {
+    await this.request(`/equipement/${id}/`, {
       method: 'DELETE',
     });
   }

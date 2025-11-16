@@ -1,10 +1,11 @@
 import { useState, useMemo } from "react";
-import { HardDrive, Calendar, AlertTriangle, Server } from "lucide-react";
+import { HardDrive, Calendar, AlertTriangle, Server, TrendingUp } from "lucide-react";
 import { StatCard } from "@/components/StatCard";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { useIncidents } from "@/hooks/useIncidents";
+import { LineChart, Line, BarChart, Bar, PieChart, Pie, Cell, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer } from "recharts";
 
 export default function SoftwareDashboard() {
   const { softwareIncidents, stats, loading } = useIncidents();
@@ -38,6 +39,32 @@ export default function SoftwareDashboard() {
       }
     });
   }, [softwareIncidents, sortBy]);
+
+  // Prepare chart data
+  const incidentsByDay = useMemo(() => {
+    const last30Days = Array.from({ length: 30 }, (_, i) => {
+      const date = new Date();
+      date.setDate(date.getDate() - (29 - i));
+      const dateStr = date.toISOString().split('T')[0];
+      return {
+        date: dateStr,
+        day: date.toLocaleDateString('fr-FR', { day: 'numeric', month: 'short' }),
+        incidents: 0
+      };
+    });
+
+    softwareIncidents.forEach(incident => {
+      const incidentDate = incident.date || incident.created_at?.split('T')[0];
+      if (incidentDate) {
+        const dayData = last30Days.find(d => d.date === incidentDate);
+        if (dayData) {
+          dayData.incidents++;
+        }
+      }
+    });
+
+    return last30Days;
+  }, [softwareIncidents]);
 
   // Calculate server statistics
   const serverStats = useMemo(() => {
@@ -103,6 +130,71 @@ export default function SoftwareDashboard() {
           icon={AlertTriangle}
           variant="primary"
         />
+      </div>
+
+      {/* Charts Section */}
+      <div className="grid gap-6 md:grid-cols-2">
+        {/* Incidents Over Time */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <TrendingUp className="h-5 w-5" />
+              Évolution des incidents (30 derniers jours)
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <LineChart data={incidentsByDay}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="day" 
+                  tick={{ fontSize: 12 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={60}
+                />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Line 
+                  type="monotone" 
+                  dataKey="incidents" 
+                  stroke="#f59e0b" 
+                  strokeWidth={2}
+                  name="Incidents"
+                  dot={{ r: 4 }}
+                />
+              </LineChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
+
+        {/* Server Distribution */}
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              <Server className="h-5 w-5" />
+              Répartition par serveur
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={serverStats.slice(0, 10).map(([name, value]) => ({ name, value }))}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis 
+                  dataKey="name" 
+                  tick={{ fontSize: 12 }}
+                  angle={-45}
+                  textAnchor="end"
+                  height={80}
+                />
+                <YAxis />
+                <Tooltip />
+                <Bar dataKey="value" fill="#f59e0b" radius={[8, 8, 0, 0]} />
+              </BarChart>
+            </ResponsiveContainer>
+          </CardContent>
+        </Card>
       </div>
 
       {/* Server Breakdown */}

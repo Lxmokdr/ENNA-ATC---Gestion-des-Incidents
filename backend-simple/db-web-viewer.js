@@ -35,6 +35,10 @@ app.get('/api/tables', (req, res) => {
             description = 'Software-related incidents with service details';
             icon = '💻';
             break;
+          case 'equipement':
+            description = 'Equipment inventory with serial numbers and partitions';
+            icon = '⚙️';
+            break;
           case 'reports':
             description = 'Incident reports linked to software incidents only';
             icon = '📋';
@@ -236,7 +240,7 @@ app.get('/', (req, res) => {
                 html += '<table class="data-table"><tr>';
                 Object.keys(data[0]).forEach(key => {
                     let headerClass = '';
-                    if (key === 'software_incident_id') {
+                    if (key === 'software_incident_id' || key === 'equipement_id') {
                         headerClass = ' class="foreign-key"';
                     }
                     html += \`<th\${headerClass}>\${key}</th>\`;
@@ -251,7 +255,7 @@ app.get('/', (req, res) => {
                                           (typeof value === 'string' && value.length > 50 ? 
                                            value.substring(0, 47) + '...' : String(value));
                         
-                        if (key === 'software_incident_id') {
+                        if (key === 'software_incident_id' || key === 'equipement_id') {
                             cellClass = ' class="foreign-key"';
                             if (value) {
                                 displayValue = \`🔗 \${value}\`;

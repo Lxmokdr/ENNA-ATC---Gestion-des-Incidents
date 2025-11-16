@@ -14,6 +14,7 @@ import SoftwareIncidents from "./pages/SoftwareIncidents";
 import EditIncident from "./pages/EditIncident";
 import AddReport from "./pages/AddReport";
 import History from "./pages/History";
+import Equipment from "./pages/Equipment";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -48,6 +49,7 @@ const AppRoutes = () => {
         <Route path="/dashboard/software" element={<SoftwareDashboard />} />
         <Route path="/hardware" element={<HardwareIncidents />} />
         <Route path="/software" element={<SoftwareIncidents />} />
+        <Route path="/equipment" element={<Equipment />} />
         <Route path="/incident/edit/:id" element={<EditIncident />} />
         <Route path="/software/report/:id" element={<AddReport />} />
         <Route path="/history" element={<History />} />
