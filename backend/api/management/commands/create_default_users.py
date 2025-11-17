@@ -1,0 +1,63 @@
+from django.core.management.base import BaseCommand
+from django.contrib.auth import get_user_model
+from django.db import IntegrityError
+
+User = get_user_model()
+
+
+class Command(BaseCommand):
+    help = 'Create default users for ENNA system'
+
+    def handle(self, *args, **options):
+        default_password = '01010101'
+        users = [
+            {'username': 'admin', 'role': 'superuser'},
+            {'username': 'technicien1', 'role': 'technicien'},
+            {'username': 'technicien2', 'role': 'technicien'},
+            {'username': 'ingenieur1', 'role': 'ingenieur'},
+            {'username': 'ingenieur2', 'role': 'ingenieur'},
+            {'username': 'chefdep1', 'role': 'chefdep'},
+            {'username': 'superuser1', 'role': 'superuser'},
+        ]
+        
+        created_count = 0
+        skipped_count = 0
+        
+        for user_data in users:
+            try:
+                user, created = User.objects.get_or_create(
+                    username=user_data['username'],
+                    defaults={
+                        'role': user_data['role'],
+                        'is_staff': user_data['role'] == 'superuser',
+                        'is_superuser': user_data['role'] == 'superuser',
+                    }
+                )
+                if created:
+                    user.set_password(default_password)
+                    user.save()
+                    created_count += 1
+                    self.stdout.write(
+                        self.style.SUCCESS(f'✅ Created user: {user_data["username"]}')
+                    )
+                else:
+                    skipped_count += 1
+                    self.stdout.write(
+                        self.style.WARNING(f'⏭️  User already exists: {user_data["username"]}')
+                    )
+            except IntegrityError:
+                skipped_count += 1
+                self.stdout.write(
+                    self.style.WARNING(f'⏭️  User already exists: {user_data["username"]}')
+                )
+        
+        self.stdout.write(
+            self.style.SUCCESS(
+                f'\n✨ Default users setup complete! '
+                f'Created: {created_count}, Skipped: {skipped_count}'
+            )
+        )
+        self.stdout.write(
+            self.style.SUCCESS(f'📝 Default password for all users: {default_password}')
+        )
+
