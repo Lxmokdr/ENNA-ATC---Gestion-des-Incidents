@@ -30,7 +30,15 @@ kill_port() {
     sleep 2
 }
 
-# Check if Node.js is installed
+# Check if Python 3 is installed
+if ! command -v python3 &> /dev/null; then
+    echo -e "${RED}❌ Python 3 is not installed. Please install Python 3.8+ first.${NC}"
+    exit 1
+fi
+
+echo -e "${GREEN}✅ Python $(python3 --version) detected${NC}"
+
+# Check if Node.js is installed (for frontend)
 if ! command -v node &> /dev/null; then
     echo -e "${RED}❌ Node.js is not installed. Please install Node.js 18+ first.${NC}"
     exit 1
@@ -61,10 +69,11 @@ if [ ! -d "node_modules" ]; then
     npm install
 fi
 
-if [ ! -d "backend-simple/node_modules" ]; then
-    echo -e "${YELLOW}🔄 Installing backend dependencies...${NC}"
-    cd backend-simple
-    npm install
+# Setup Django backend if needed
+if [ ! -d "backend/venv" ]; then
+    echo -e "${YELLOW}🔄 Setting up Django backend...${NC}"
+    cd backend
+    bash setup_django.sh
     cd ..
 fi
 
@@ -74,18 +83,38 @@ echo -e "${GREEN}✅ Dependencies ready${NC}"
 echo -e "${BLUE}🧹 Cleaning up existing processes...${NC}"
 kill_port 8000  # Backend
 kill_port 8080  # Frontend
-kill_port 3001  # DB Viewer
 
-# Start Backend
-echo -e "${BLUE}🔧 Starting Backend Server...${NC}"
-cd backend-simple
-node server.js &
+# Start Django Backend
+echo -e "${BLUE}🔧 Starting Django Backend Server...${NC}"
+cd backend
+
+# Determine Python command
+if [ -d "venv" ]; then
+    source venv/bin/activate
+    PYTHON_CMD=python
+else
+    PYTHON_CMD=python3
+fi
+
+# Check if Django is set up
+if [ ! -f "manage.py" ]; then
+    echo -e "${YELLOW}🔄 Django backend not set up, running setup...${NC}"
+    bash setup_django.sh
+fi
+
+# Activate venv if it exists
+if [ -d "venv" ]; then
+    source venv/bin/activate
+    PYTHON_CMD=python
+fi
+
+$PYTHON_CMD manage.py runserver 8000 &
 BACKEND_PID=$!
 cd ..
 
 # Wait for backend to start
 echo -e "${YELLOW}⏳ Waiting for backend to start...${NC}"
-sleep 3
+sleep 5
 
 # Check if backend is running
 if curl -s http://localhost:8000/api/health/ > /dev/null; then
@@ -95,16 +124,6 @@ else
     kill $BACKEND_PID 2>/dev/null || true
     exit 1
 fi
-
-# Start Database Viewer (optional)
-echo -e "${BLUE}🗄️  Starting Database Viewer...${NC}"
-cd backend-simple
-node db-web-viewer.js &
-DB_VIEWER_PID=$!
-cd ..
-
-sleep 2
-echo -e "${GREEN}✅ Database Viewer running on http://localhost:3001${NC}"
 
 # Start Frontend
 echo -e "${BLUE}⚛️  Starting Frontend Development Server...${NC}"
@@ -130,8 +149,7 @@ echo ""
 echo -e "${GREEN}🎉 ENNA ATC is now running!${NC}"
 echo "=================================================="
 echo -e "${BLUE}📱 Frontend:${NC}     http://localhost:8080"
-echo -e "${BLUE}🔧 Backend API:${NC}   http://localhost:8000"
-echo -e "${BLUE}🗄️  DB Viewer:${NC}    http://localhost:3001"
+echo -e "${BLUE}🔧 Backend API:${NC}   http://localhost:8000 (Django)"
 echo ""
 echo -e "${YELLOW}👥 Default Users (Password: 01010101):${NC}"
 echo "   • technicien1, technicien2"

@@ -60,9 +60,26 @@ export function IncidentForm({ onSubmit, type, title, initialData }: IncidentFor
   const [modeRadarCategory, setModeRadarCategory] = useState<string>("");
   const [equipmentLoading, setEquipmentLoading] = useState(false);
   const [availableSerialNumbers, setAvailableSerialNumbers] = useState<string[]>([]);
+  // Get default date and time (GMT/UTC)
+  const getDefaultDate = () => {
+    if (initialData?.date) return initialData.date;
+    // Use UTC date (toISOString() returns UTC)
+    const now = new Date();
+    return now.toISOString().split('T')[0]; // YYYY-MM-DD format in UTC
+  };
+
+  const getDefaultTime = () => {
+    if (initialData?.time) return initialData.time;
+    // Always use UTC/GMT time, not local time
+    const now = new Date();
+    const utcHours = String(now.getUTCHours()).padStart(2, '0');
+    const utcMinutes = String(now.getUTCMinutes()).padStart(2, '0');
+    return `${utcHours}:${utcMinutes}`; // HH:MM format in GMT/UTC
+  };
+
   const [formData, setFormData] = useState<IncidentFormData>({
-    date: initialData?.date || "",
-    time: initialData?.time || "",
+    date: getDefaultDate(),
+    time: getDefaultTime(),
     description: initialData?.description || "",
     nom_de_equipement: initialData?.nom_de_equipement || "",
     partition: initialData?.partition || "",
@@ -108,9 +125,17 @@ export function IncidentForm({ onSubmit, type, title, initialData }: IncidentFor
     onSubmit(formData);
     // Only reset form if not editing (no initialData)
     if (!initialData) {
+      const now = new Date();
+      // Use UTC date (toISOString() returns UTC)
+      const defaultDate = now.toISOString().split('T')[0];
+      // Use UTC/GMT time for default
+      const defaultHours = String(now.getUTCHours()).padStart(2, '0');
+      const defaultMinutes = String(now.getUTCMinutes()).padStart(2, '0');
+      const defaultTime = `${defaultHours}:${defaultMinutes}`;
+      
       setFormData({
-        date: "",
-        time: "",
+        date: defaultDate,
+        time: defaultTime,
         description: "",
         nom_de_equipement: "",
         partition: "",
@@ -271,7 +296,7 @@ export function IncidentForm({ onSubmit, type, title, initialData }: IncidentFor
               <Input
                 id="date"
                 type="date"
-                value={formData.date || new Date().toISOString().split("T")[0]}
+                value={formData.date}
                 onChange={(e) =>
                   setFormData({ ...formData, date: e.target.value })
                 }
@@ -283,13 +308,7 @@ export function IncidentForm({ onSubmit, type, title, initialData }: IncidentFor
               <Input
                 id="time"
                 type="time"
-                value={formData.time || (() => {
-                  // Always use UTC/GMT time, not local time
-                  const now = new Date();
-                  const utcHours = String(now.getUTCHours()).padStart(2, '0');
-                  const utcMinutes = String(now.getUTCMinutes()).padStart(2, '0');
-                  return `${utcHours}:${utcMinutes}`;
-                })()}
+                value={formData.time}
                 onChange={(e) =>
                   setFormData({ ...formData, time: e.target.value })
                 }

@@ -12,13 +12,9 @@
     "preview": "vite preview",
     "start": "./start.sh",
     "stop": "./stop.sh",
-    "setup": "./setup.sh",
-    "backend": "cd backend-simple && node server.js",
-    "db-viewer": "cd backend-simple && node db-web-viewer.js",
-    "db-cli": "cd backend-simple && node db-viewer.js"
+    "setup": "./setup.sh"
   },
   "dependencies": {
-    "@hookform/resolvers": "^3.10.0",
     "@radix-ui/react-alert-dialog": "^1.1.14",
     "@radix-ui/react-dialog": "^1.1.14",
     "@radix-ui/react-label": "^2.1.7",
@@ -31,7 +27,6 @@
     "@tanstack/react-query": "^5.83.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
-    "cmdk": "^1.1.1",
     "lucide-react": "^0.462.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",

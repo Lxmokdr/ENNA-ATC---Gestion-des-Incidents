@@ -21,8 +21,17 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Trash2, Edit } from "lucide-react";
+import { Trash2, Edit, History } from "lucide-react";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
+import { apiClient, Incident } from "@/services/api";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+  DialogDescription,
+} from "@/components/ui/dialog";
+import { IncidentTable } from "@/components/IncidentTable";
 
 // Equipment names - image equipment with ALER prefix + partition list as equipment
 const EQUIPMENT_NAMES = [
@@ -99,6 +108,10 @@ export default function Equipment() {
   });
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [equipmentToDelete, setEquipmentToDelete] = useState<number | null>(null);
+  const [historyDialogOpen, setHistoryDialogOpen] = useState(false);
+  const [equipmentHistory, setEquipmentHistory] = useState<Incident[]>([]);
+  const [historyEquipment, setHistoryEquipment] = useState<Equipment | null>(null);
+  const [loadingHistory, setLoadingHistory] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -147,6 +160,20 @@ export default function Equipment() {
       }
       setDeleteDialogOpen(false);
       setEquipmentToDelete(null);
+    }
+  };
+
+  const handleViewHistory = async (equipmentId: number) => {
+    try {
+      setLoadingHistory(true);
+      const history = await apiClient.getEquipmentHistory(equipmentId);
+      setEquipmentHistory(history.incidents);
+      setHistoryEquipment(history.equipment);
+      setHistoryDialogOpen(true);
+    } catch (error: any) {
+      toast.error(error.message || "Erreur lors du chargement de l'historique");
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
@@ -304,6 +331,14 @@ export default function Equipment() {
                             <Button
                               variant="ghost"
                               size="sm"
+                              onClick={() => handleViewHistory(item.id)}
+                              title="Voir l'historique"
+                            >
+                              <History className="h-4 w-4" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="sm"
                               onClick={() => {
                                 setIsEditing(item.id);
                                 setFormData({
@@ -342,6 +377,36 @@ export default function Equipment() {
         title="Supprimer l'équipement"
         description="Êtes-vous sûr de vouloir supprimer cet équipement ? Cette action est irréversible."
       />
+
+      <Dialog open={historyDialogOpen} onOpenChange={setHistoryDialogOpen}>
+        <DialogContent className="max-w-6xl max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>
+              Historique des incidents - {historyEquipment?.nom_equipement}
+            </DialogTitle>
+            <DialogDescription>
+              {historyEquipment && (
+                <div className="mt-2 space-y-1">
+                  <p><strong>Numéro de série:</strong> {historyEquipment.num_serie || "N/A"}</p>
+                  <p><strong>Partition:</strong> {historyEquipment.partition}</p>
+                  <p><strong>Total d'incidents:</strong> {equipmentHistory.length}</p>
+                </div>
+              )}
+            </DialogDescription>
+          </DialogHeader>
+          {loadingHistory ? (
+            <div className="flex items-center justify-center py-8">
+              <div className="text-muted-foreground">Chargement de l'historique...</div>
+            </div>
+          ) : equipmentHistory.length === 0 ? (
+            <div className="text-center py-8 text-muted-foreground">
+              Aucun incident enregistré pour cet équipement
+            </div>
+          ) : (
+            <IncidentTable incidents={equipmentHistory} onRefresh={() => {}} />
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

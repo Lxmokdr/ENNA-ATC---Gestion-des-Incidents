@@ -31,10 +31,12 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
           // Verify token is still valid
           try {
             await apiClient.getProfile();
-          } catch (err) {
-            // Token is invalid, clear auth data
+          } catch (err: any) {
+            // Token is invalid or expired, clear auth data
+            console.log("Token validation failed, clearing auth:", err.message);
             localStorage.removeItem("enna_user");
             localStorage.removeItem("enna_token");
+            apiClient.setToken(null);
             setUser(null);
           }
         }

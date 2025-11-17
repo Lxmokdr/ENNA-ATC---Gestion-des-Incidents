@@ -1,15 +1,24 @@
 import { useState, useEffect } from "react";
 import { apiClient, Equipment } from "@/services/api";
+import { useAuth } from "@/hooks/useAuth";
 
 export function useEquipment() {
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [equipment, setEquipment] = useState<Equipment[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load equipment on mount
+  // Load equipment on mount (only if authenticated)
   useEffect(() => {
-    loadEquipment();
-  }, []);
+    // Wait for auth to finish loading, then check if authenticated
+    if (!authLoading && isAuthenticated) {
+      loadEquipment();
+    } else if (!authLoading && !isAuthenticated) {
+      // Not authenticated, stop loading
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading]);
 
   const loadEquipment = async () => {
     try {

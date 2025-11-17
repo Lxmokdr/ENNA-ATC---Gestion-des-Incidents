@@ -2,9 +2,10 @@
 
 ![ENNA ATC](https://img.shields.io/badge/ENNA-ATC-blue)
 ![React](https://img.shields.io/badge/React-18-61dafb)
-![Node.js](https://img.shields.io/badge/Node.js-18-339933)
-![SQLite](https://img.shields.io/badge/SQLite-3-003B57)
+![Django](https://img.shields.io/badge/Django-5.0-092E20)
+![Django REST Framework](https://img.shields.io/badge/DRF-3.14-ff1709)
 ![TypeScript](https://img.shields.io/badge/TypeScript-5-3178c6)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-16-336791)
 
 Système complet de gestion des incidents techniques pour l'École Nationale de l'Aviation Civile (ENNA). Application web moderne avec interface intuitive pour la gestion des incidents matériels et logiciels.
 
@@ -25,22 +26,24 @@ Système complet de gestion des incidents techniques pour l'École Nationale de 
 - **Validation en temps réel** des données
 - **Confirmation avant suppression** avec dialogues de sécurité
 
+### 🏷️ Gestion des Équipements
+- **Enregistrement des équipements** avec numéro de série
+- **Historique des incidents** par équipement
+- **Suivi des états** (actuel/historique)
+- **Gestion des partitions**
+
 ### 📋 Système de Rapports
 - **Rapports détaillés** pour les incidents logiciels uniquement
 - **Champs spécialisés** : Anomalie, Analyse, Conclusion
 - **Modification en place** des rapports existants
 - **Un rapport par incident** (relation 1:1)
-- **Interface de création/modification** intuitive
 
-### 📈 Tableau de Bord Administrateur
-- **Statistiques en temps réel** :
-  - Nombre total d'incidents
-  - Répartition par type (matériel/logiciel)
-  - Durée totale de panne
-  - Durée moyenne de panne
+### 📈 Tableaux de Bord
+- **Dashboard Administrateur** : Vue d'ensemble et statistiques
+- **Dashboard Matériel** : Statistiques incidents matériels
+- **Dashboard Logiciel** : Statistiques incidents logiciels
 - **Graphiques interactifs** avec distribution des incidents
 - **Incidents récents** avec aperçu rapide
-- **Calculs automatiques** des métriques
 
 ### 🎨 Interface Utilisateur
 - **Design moderne** avec Tailwind CSS
@@ -48,58 +51,61 @@ Système complet de gestion des incidents techniques pour l'École Nationale de 
 - **Responsive design** pour tous les appareils
 - **Navigation intuitive** avec sidebar
 - **Feedback utilisateur** avec toasts et confirmations
-- **Thème sombre/clair** (préparé)
 
 ## 🛠️ Architecture Technique
 
-### Frontend (React + TypeScript)
+### Frontend (React + TypeScript + Vite)
 ```
 src/
 ├── components/          # Composants réutilisables
-│   ├── ui/             # Composants UI de base
-│   ├── IncidentForm.tsx    # Formulaire incidents
-│   ├── IncidentTable.tsx   # Tableau incidents
-│   └── ConfirmationDialog.tsx # Dialogues de confirmation
+│   ├── ui/             # Composants UI de base (Shadcn)
+│   ├── IncidentForm.tsx
+│   ├── IncidentTable.tsx
+│   └── ConfirmationDialog.tsx
 ├── pages/              # Pages de l'application
-│   ├── Login.tsx           # Page de connexion
-│   ├── AdminDashboard.tsx  # Tableau de bord principal
-│   ├── HardwareIncidents.tsx # Gestion incidents matériels
-│   ├── SoftwareIncidents.tsx # Gestion incidents logiciels
-│   ├── AddReport.tsx       # Ajout/modification rapports
-│   └── EditIncident.tsx    # Modification incidents
+│   ├── Login.tsx
+│   ├── AdminDashboard.tsx
+│   ├── HardwareDashboard.tsx
+│   ├── SoftwareDashboard.tsx
+│   ├── HardwareIncidents.tsx
+│   ├── SoftwareIncidents.tsx
+│   ├── Equipment.tsx
+│   ├── History.tsx
+│   └── AddReport.tsx
 ├── hooks/              # Hooks personnalisés
-│   └── useIncidents.ts     # Logique métier incidents
+│   ├── useAuth.tsx
+│   ├── useIncidents.ts
+│   └── useEquipment.ts
 ├── services/           # Services API
-│   └── api.ts              # Client API centralisé
+│   └── api.ts
 └── lib/                # Utilitaires
-    └── utils.ts            # Fonctions utilitaires
+    └── utils.ts
 ```
 
-### Backend (Node.js + Express + SQLite)
+### Backend (Django REST Framework + PostgreSQL)
 ```
-backend-simple/
-├── server.js           # Serveur principal Express
-├── enna.db            # Base de données SQLite
-├── db-viewer.js       # Visualiseur CLI de la DB
-├── db-web-viewer.js   # Visualiseur web de la DB
-└── package.json       # Dépendances backend
-```
-
-### Base de Données
-```sql
--- Tables principales
-users                  # Utilisateurs et authentification
-hardware_incidents     # Incidents matériels
-software_incidents     # Incidents logiciels
-reports               # Rapports (liés aux incidents logiciels)
+backend/
+├── api/                # Application API
+│   ├── models.py      # Modèles de données
+│   ├── views.py       # Vues/ViewSets
+│   ├── serializers.py # Sérialiseurs DRF
+│   ├── urls.py        # Routes API
+│   └── management/    # Commandes de gestion
+├── enna_backend/      # Configuration Django
+│   ├── settings.py
+│   └── urls.py
+├── scripts/           # Scripts utilitaires
+└── docs/              # Documentation
 ```
 
 ## 🚀 Installation & Démarrage Rapide
 
 ### Prérequis
-- **Node.js** 18+ 
+- **Node.js** 18+ (pour le frontend)
+- **Python** 3.13+ (pour le backend Django)
+- **PostgreSQL** 16+ (base de données)
 - **npm** ou **yarn**
-- **Git** (pour cloner le projet)
+- **Git**
 
 ### 1. Cloner le Projet
 ```bash
@@ -107,51 +113,56 @@ git clone <repository-url>
 cd ENNA
 ```
 
-### 2. Installation des Dépendances
+### 2. Installation Backend
 
-#### Frontend
 ```bash
-# Installer les dépendances React
+cd backend
+
+# Installer les dépendances
+pip install -r requirements.txt
+
+# Configurer PostgreSQL (voir docs/POSTGRESQL_MIGRATION.md)
+# Créer le fichier .env avec les credentials
+
+# Exécuter les migrations
+./scripts/run_migrations_final.sh
+
+# Créer les utilisateurs par défaut
+python manage.py create_default_users
+
+# Créer des données de test (optionnel)
+./scripts/create_test_data.sh
+```
+
+### 3. Installation Frontend
+
+```bash
+# Depuis la racine du projet
 npm install
 ```
 
-#### Backend
-```bash
-# Installer les dépendances Node.js
-cd backend-simple
-npm install
-cd ..
-```
+### 4. Démarrage
 
-### 3. Démarrage de l'Application
-
-#### Option A : Démarrage Automatique (Recommandé)
+**Option A : Script automatique**
 ```bash
-# Script de démarrage complet
 ./start.sh
 ```
 
-#### Option B : Démarrage Manuel
+**Option B : Manuel**
 
-**Terminal 1 - Backend :**
+Terminal 1 - Backend:
 ```bash
-cd backend-simple
-node server.js
+cd backend
+./scripts/run_django.sh runserver 8000
 ```
-✅ Backend disponible sur `http://localhost:8000`
 
-**Terminal 2 - Frontend :**
+Terminal 2 - Frontend:
 ```bash
 npm run dev
 ```
-✅ Frontend disponible sur `http://localhost:8080`
 
-**Terminal 3 - Visualiseur DB (Optionnel) :**
-```bash
-cd backend-simple
-node db-web-viewer.js
-```
-✅ Visualiseur DB disponible sur `http://localhost:3001`
+✅ Backend: `http://localhost:8000`  
+✅ Frontend: `http://localhost:8080`
 
 ## 👥 Comptes Utilisateurs
 
@@ -171,11 +182,9 @@ Tous les utilisateurs ont le mot de passe : `01010101`
 
 ### Authentification
 ```http
-POST   /api/auth/login/          # Connexion utilisateur
+POST   /api/auth/login/          # Connexion
 POST   /api/auth/logout/         # Déconnexion
 GET    /api/auth/profile/        # Profil utilisateur
-PUT    /api/auth/profile/        # Modification profil
-POST   /api/auth/change-password/ # Changement mot de passe
 ```
 
 ### Incidents
@@ -191,76 +200,26 @@ GET    /api/incidents/stats/              # Statistiques
 GET    /api/incidents/recent/             # Incidents récents
 ```
 
+### Équipements
+```http
+GET    /api/equipement/                   # Liste des équipements
+POST   /api/equipement/                   # Créer un équipement
+PUT    /api/equipement/:id                # Modifier un équipement
+DELETE /api/equipement/:id                # Supprimer un équipement
+GET    /api/equipement/:id/history/       # Historique des incidents
+```
+
 ### Rapports
 ```http
 GET    /api/reports/                      # Liste des rapports
-GET    /api/reports/?incident=:id         # Rapports d'un incident
 POST   /api/reports/                      # Créer/modifier un rapport
 ```
 
-### Utilisateurs
-```http
-GET    /api/users/                        # Liste des utilisateurs
-POST   /api/users/                        # Créer un utilisateur
-PUT    /api/users/:id                     # Modifier un utilisateur
-DELETE /api/users/:id                     # Supprimer un utilisateur
-```
+## 📚 Documentation
 
-## 🎯 Guide d'Utilisation
-
-### 1. Connexion
-1. Ouvrir `http://localhost:8080`
-2. Utiliser un compte par défaut (voir section Comptes)
-3. Mot de passe : `01010101`
-
-### 2. Navigation
-- **Dashboard** : Vue d'ensemble et statistiques
-- **Incidents Matériels** : Gestion des incidents hardware
-- **Incidents Logiciels** : Gestion des incidents software
-- **Profil** : Gestion du compte utilisateur
-
-### 3. Création d'Incident
-1. Aller dans la section appropriée (Matériel/Logiciel)
-2. Remplir le formulaire avec les informations requises
-3. Cliquer sur "Créer l'incident"
-4. L'incident apparaît immédiatement dans la liste
-
-### 4. Ajout de Rapport (Logiciels uniquement)
-1. Aller dans "Incidents Logiciels"
-2. Cliquer sur "Ajouter Rapport" pour un incident
-3. Remplir les champs : Anomalie, Analyse, Conclusion
-4. Sauvegarder le rapport
-
-### 5. Modification/Suppression
-1. Utiliser les boutons "Modifier" ou "Supprimer" dans le tableau
-2. Confirmer l'action dans le dialogue
-3. Les modifications sont appliquées immédiatement
-
-## 🔍 Outils de Développement
-
-### Visualiseur de Base de Données
-```bash
-# Interface web
-http://localhost:3001
-
-# Interface CLI
-cd backend-simple
-node db-viewer.js
-```
-
-### Scripts de Développement
-```bash
-# Frontend
-npm run dev          # Développement avec hot-reload
-npm run build        # Build de production
-npm run preview      # Prévisualisation du build
-
-# Backend
-cd backend-simple
-node server.js       # Serveur de développement
-node db-viewer.js    # Visualiseur CLI
-node db-web-viewer.js # Visualiseur web
-```
+- `backend/docs/POSTGRESQL_MIGRATION.md` - Guide de migration PostgreSQL
+- `backend/docs/TEST_DATA_AND_HISTORY.md` - Données de test et historique
+- `docs/` - Documentation générale du projet
 
 ## 🔒 Sécurité
 
@@ -268,119 +227,75 @@ node db-web-viewer.js # Visualiseur web
 - **Hachage bcrypt** des mots de passe
 - **Validation stricte** des données
 - **CORS configuré** pour la sécurité
-- **Sanitisation** des entrées utilisateur
-- **Protection CSRF** intégrée
-
-## 📊 Base de Données
-
-### Schéma Principal
-```sql
--- Utilisateurs
-users (id, username, password, role, is_active, created_at)
-
--- Incidents Matériels
-hardware_incidents (
-  id, date, time, description, category, location,
-  equipment_name, partition, downtime,
-  anomaly, action_taken, state_after_intervention, recommendation,
-  created_by_id, assigned_to_id, created_at, updated_at
-)
-
--- Incidents Logiciels
-software_incidents (
-  id, date, time, description, category, location,
-  service_name, software_type,
-  anomaly, action_taken, state_after_intervention, recommendation,
-  created_by_id, assigned_to_id, created_at, updated_at
-)
-
--- Rapports (Logiciels uniquement)
-reports (
-  id, software_incident_id, date,
-  anomaly, analysis, conclusion,
-  created_by_id, created_at, updated_at
-)
-```
+- **Variables d'environnement** pour les secrets
 
 ## 🚀 Déploiement
 
 ### Variables d'Environnement
-```bash
-# Backend
-PORT=8000
-JWT_SECRET=your-secret-key
-DB_PATH=./enna.db
 
-# Frontend
-VITE_API_URL=http://localhost:8000/api
+**Backend (.env):**
+```env
+DB_NAME=enna_db
+DB_USER=enna_user
+DB_PASSWORD=your_password
+DB_HOST=localhost
+DB_PORT=5432
+SECRET_KEY=your-secret-key
 ```
 
+**Frontend:**
+- API URL: `http://localhost:8000/api` (défaut)
+
 ### Build de Production
+
 ```bash
 # Frontend
 npm run build
-# Les fichiers sont dans dist/
+# Fichiers dans dist/
 
 # Backend
-# Copier le dossier backend-simple
-# Installer les dépendances
-npm install --production
+# Utiliser gunicorn ou uwsgi pour la production
 ```
 
 ## 🤝 Contribution
 
 1. **Fork** le projet
-2. **Créer** une branche feature (`git checkout -b feature/AmazingFeature`)
-3. **Commit** vos changements (`git commit -m 'Add some AmazingFeature'`)
-4. **Push** vers la branche (`git push origin feature/AmazingFeature`)
+2. **Créer** une branche feature
+3. **Commit** vos changements
+4. **Push** vers la branche
 5. **Ouvrir** une Pull Request
-
-### Standards de Code
-- **TypeScript** strict
-- **ESLint** + **Prettier** configurés
-- **Conventions** de nommage cohérentes
-- **Tests** unitaires (à implémenter)
-- **Documentation** des fonctions complexes
 
 ## 📝 Changelog
 
-### Version 2.0.0 (Actuelle)
-- ✅ Séparation des incidents matériels/logiciels
-- ✅ Système de rapports pour incidents logiciels
-- ✅ Tableau de bord unifié
-- ✅ Confirmation des actions critiques
-- ✅ Gestion des dates/heures automatique
-- ✅ Visualiseur de base de données
-- ✅ Interface utilisateur modernisée
+### Version 2.1.0 (Actuelle)
+- ✅ Migration vers PostgreSQL
+- ✅ Gestion des équipements
+- ✅ Historique des incidents par équipement
+- ✅ Données de test automatiques
+- ✅ Scripts de migration et utilitaires
 
-### Version 1.0.0
-- ✅ Authentification de base
-- ✅ CRUD incidents simple
-- ✅ Interface React basique
+### Version 2.0.0
+- ✅ Séparation des incidents matériels/logiciels
+- ✅ Système de rapports
+- ✅ Tableaux de bord spécialisés
+- ✅ Interface utilisateur modernisée
 
 ## 🐛 Dépannage
 
-### Problèmes Courants
-
-**Backend ne démarre pas :**
+### Backend ne démarre pas
 ```bash
-# Vérifier le port 8000
-lsof -i :8000
-# Tuer le processus si nécessaire
-kill -9 <PID>
+# Vérifier PostgreSQL
+sudo systemctl status postgresql
+
+# Vérifier les logs
+sudo journalctl -u postgresql
 ```
 
-**Frontend ne se connecte pas :**
+### Frontend ne se connecte pas
 ```bash
 # Vérifier que le backend est démarré
 curl http://localhost:8000/api/health/
 ```
 
-**Base de données corrompue :**
-```bash
-# Supprimer et recréer
-rm backend-simple/enna.db
-cd backend-simple
-node server.js
-```
-
+### Problèmes de migration
+Voir `backend/docs/POSTGRESQL_MIGRATION.md` pour les instructions détaillées.

@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { apiClient, Incident, Report, IncidentStats } from "@/services/api";
 import { IncidentFormData } from "@/components/IncidentForm";
+import { useAuth } from "@/hooks/useAuth";
 
 export function useIncidents() {
+  const { isAuthenticated, loading: authLoading } = useAuth();
   const [hardwareIncidents, setHardwareIncidents] = useState<Incident[]>([]);
   const [softwareIncidents, setSoftwareIncidents] = useState<Incident[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
@@ -10,11 +12,18 @@ export function useIncidents() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  // Load incidents on mount
+  // Load incidents on mount (only if authenticated)
   useEffect(() => {
-    loadIncidents();
-    loadStats();
-  }, []);
+    // Wait for auth to finish loading, then check if authenticated
+    if (!authLoading && isAuthenticated) {
+      loadIncidents();
+      loadStats();
+    } else if (!authLoading && !isAuthenticated) {
+      // Not authenticated, stop loading
+      setLoading(false);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isAuthenticated, authLoading]);
 
   const loadIncidents = async () => {
     try {
@@ -62,13 +71,19 @@ export function useIncidents() {
 
   const addHardwareIncident = async (data: IncidentFormData) => {
     try {
-      // Ensure time is set - if not provided, use current UTC time
+      // Time should already be set from form, but ensure it's in HH:MM format
       let incidentTime = data.time;
       if (!incidentTime || incidentTime.trim() === '') {
+        // Fallback to current UTC time if somehow empty
         const now = new Date();
         const utcHours = String(now.getUTCHours()).padStart(2, '0');
         const utcMinutes = String(now.getUTCMinutes()).padStart(2, '0');
         incidentTime = `${utcHours}:${utcMinutes}`;
+      }
+      // Ensure time is in HH:MM format (remove seconds if present)
+      if (incidentTime.includes(':')) {
+        const parts = incidentTime.split(':');
+        incidentTime = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
       }
       
       const incidentData = {
@@ -99,13 +114,19 @@ export function useIncidents() {
 
   const addSoftwareIncident = async (data: IncidentFormData) => {
     try {
-      // Ensure time is set - if not provided, use current UTC time
+      // Time should already be set from form, but ensure it's in HH:MM format
       let incidentTime = data.time;
       if (!incidentTime || incidentTime.trim() === '') {
+        // Fallback to current UTC time if somehow empty
         const now = new Date();
         const utcHours = String(now.getUTCHours()).padStart(2, '0');
         const utcMinutes = String(now.getUTCMinutes()).padStart(2, '0');
         incidentTime = `${utcHours}:${utcMinutes}`;
+      }
+      // Ensure time is in HH:MM format (remove seconds if present)
+      if (incidentTime.includes(':')) {
+        const parts = incidentTime.split(':');
+        incidentTime = `${parts[0].padStart(2, '0')}:${parts[1].padStart(2, '0')}`;
       }
       
       const incidentData = {

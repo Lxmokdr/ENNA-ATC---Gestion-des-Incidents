@@ -116,15 +116,21 @@ class ApiClient {
 
   setToken(token: string | null) {
     this.token = token;
+    if (token) {
+      localStorage.setItem('enna_token', token);
+    } else {
+      localStorage.removeItem('enna_token');
+    }
   }
 
   private async request<T>(
     endpoint: string,
     options: RequestInit = {}
   ): Promise<T> {
-    // Refresh token from localStorage in case it was updated elsewhere
-    if (!this.token) {
-      this.token = localStorage.getItem('enna_token');
+    // Always refresh token from localStorage in case it was updated elsewhere
+    const storedToken = localStorage.getItem('enna_token');
+    if (storedToken) {
+      this.token = storedToken;
     }
     
     const url = `${this.baseURL}${endpoint}`;
@@ -133,8 +139,10 @@ class ApiClient {
       ...options.headers,
     };
 
-    if (this.token) {
-      headers['Authorization'] = `Bearer ${this.token}`;
+    // Use stored token if available, even if this.token is null
+    const tokenToUse = this.token || storedToken;
+    if (tokenToUse) {
+      headers['Authorization'] = `Bearer ${tokenToUse}`;
     }
 
     const response = await fetch(url, {
@@ -144,7 +152,30 @@ class ApiClient {
 
     if (!response.ok) {
       const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.message || `HTTP error! status: ${response.status}`);
+      // Handle different error formats
+      let errorMessage = errorData.message || errorData.detail;
+      if (errorData.non_field_errors && Array.isArray(errorData.non_field_errors)) {
+        errorMessage = errorData.non_field_errors[0];
+      }
+      // If there are validation errors, include them in the message
+      if (errorData.errors && typeof errorData.errors === 'object') {
+        const errorMessages = Object.entries(errorData.errors)
+          .map(([field, messages]: [string, any]) => {
+            const msg = Array.isArray(messages) ? messages.join(', ') : String(messages);
+            return `${field}: ${msg}`;
+          })
+          .join('; ');
+        if (errorMessages) {
+          errorMessage = errorMessage ? `${errorMessage} (${errorMessages})` : errorMessages;
+        }
+      }
+      if (!errorMessage) {
+        errorMessage = `HTTP error! status: ${response.status}`;
+      }
+      const error = new Error(errorMessage);
+      (error as any).status = response.status;
+      (error as any).data = errorData;
+      throw error;
     }
 
     return response.json();
@@ -319,6 +350,10 @@ class ApiClient {
     await this.request(`/equipement/${id}/`, {
       method: 'DELETE',
     });
+  }
+
+  async getEquipmentHistory(id: number): Promise<{ equipment: Equipment; incidents: Incident[]; count: number }> {
+    return this.request<{ equipment: Equipment; incidents: Incident[]; count: number }>(`/equipement/${id}/history/`);
   }
 }
 

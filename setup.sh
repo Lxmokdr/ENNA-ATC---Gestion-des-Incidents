@@ -69,45 +69,40 @@ else
     exit 1
 fi
 
-# Install backend dependencies
-echo -e "${YELLOW}🔄 Installing backend dependencies...${NC}"
-cd backend-simple
-if npm install; then
-    echo -e "${GREEN}✅ Backend dependencies installed${NC}"
+# Setup Django backend
+echo -e "${YELLOW}🔄 Setting up Django backend...${NC}"
+if [ -d "backend" ]; then
+    cd backend
+    if bash setup_django.sh; then
+        echo -e "${GREEN}✅ Django backend setup completed${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Django setup had warnings, but continuing...${NC}"
+    fi
+    cd ..
 else
-    echo -e "${RED}❌ Failed to install backend dependencies${NC}"
+    echo -e "${RED}❌ Backend directory not found${NC}"
     exit 1
 fi
-cd ..
-
-echo ""
-
-# Create initial database
-echo -e "${BLUE}🗄️  Setting up database...${NC}"
-cd backend-simple
-if node server.js &> /dev/null & then
-    SERVER_PID=$!
-    sleep 3
-    kill $SERVER_PID 2>/dev/null || true
-    echo -e "${GREEN}✅ Database initialized${NC}"
-else
-    echo -e "${RED}❌ Failed to initialize database${NC}"
-    exit 1
-fi
-cd ..
 
 echo ""
 
 # Test the installation
 echo -e "${BLUE}🧪 Testing installation...${NC}"
 
-# Test backend
-cd backend-simple
-node server.js &
+# Test backend (Django)
+cd backend
+if [ -d "venv" ]; then
+    source venv/bin/activate
+    PYTHON_CMD=python
+else
+    PYTHON_CMD=python3
+fi
+
+$PYTHON_CMD manage.py runserver 8000 &
 BACKEND_PID=$!
 cd ..
 
-sleep 3
+sleep 5
 
 if curl -s http://localhost:8000/api/health/ > /dev/null; then
     echo -e "${GREEN}✅ Backend test passed${NC}"
@@ -132,7 +127,7 @@ echo "   3. Login with: technicien1 / 01010101"
 echo ""
 echo -e "${BLUE}📚 Documentation:${NC}"
 echo "   • README.md - Complete documentation"
-echo "   • http://localhost:3001 - Database viewer"
+echo "   • docs/ - Additional documentation"
 echo ""
 echo -e "${BLUE}🛠️  Available commands:${NC}"
 echo "   • ./start.sh  - Start all services"

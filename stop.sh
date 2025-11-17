@@ -41,11 +41,10 @@ kill_port 8000
 # Stop DB Viewer (port 3001)
 kill_port 3001
 
-# Kill any remaining Node.js processes related to ENNA
+# Kill any remaining processes related to ENNA
 echo -e "${YELLOW}🔄 Killing any remaining ENNA processes...${NC}"
-pkill -f "node server.js" 2>/dev/null || true
-pkill -f "node db-web-viewer.js" 2>/dev/null || true
 pkill -f "vite" 2>/dev/null || true
+pkill -f "manage.py runserver" 2>/dev/null || true
 
 sleep 2
 
