@@ -20,6 +20,9 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 #           3) Default (only for local development)
 SECRET_KEY = os.environ.get('SECRET_KEY') or config('SECRET_KEY', default='django-insecure-enna-secret-key-change-in-production')
 
+# SECURITY WARNING: don't run with debug turned on in production!
+DEBUG = config('DEBUG', default=True, cast=bool)
+
 # Safety check: Warn if using default secret key in production
 if SECRET_KEY == 'django-insecure-enna-secret-key-change-in-production' and not DEBUG:
     import warnings
@@ -28,9 +31,6 @@ if SECRET_KEY == 'django-insecure-enna-secret-key-change-in-production' and not 
         'Set SECRET_KEY environment variable or in .env file.',
         RuntimeWarning
     )
-
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = config('DEBUG', default=True, cast=bool)
 
 # Allowed hosts - use environment variable or default
 ALLOWED_HOSTS = config(
