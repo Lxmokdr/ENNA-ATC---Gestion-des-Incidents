@@ -76,12 +76,13 @@ def login(request):
             logger.error(f"Error in login pre-check: {e}")
             # Continue with login attempt
     
-    # Log request data for debugging (only in development)
+    # Log request data for debugging
     import logging
     logger = logging.getLogger(__name__)
-    if settings.DEBUG:
-        logger.debug(f"Login request data: {request.data}")
-        logger.debug(f"Login request content type: {request.content_type}")
+    logger.info(f"Login attempt - Username: {request.data.get('username', 'NOT PROVIDED')}, "
+                f"Has password: {bool(request.data.get('password'))}, "
+                f"Content-Type: {request.content_type}, "
+                f"Data keys: {list(request.data.keys())}")
     
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
@@ -153,6 +154,9 @@ def login(request):
                     import logging
                     logger = logging.getLogger(__name__)
                     logger.error(f"Error in failed login handling: {e}")
+        
+        # Log validation errors for debugging
+        logger.warning(f"Login validation failed: {error_response}")
         
         # Return validation errors from serializer
         return Response(

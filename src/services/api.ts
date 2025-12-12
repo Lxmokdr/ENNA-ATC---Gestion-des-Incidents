@@ -229,9 +229,13 @@ class ApiClient {
           console.error('❌ API Error Details:', {
             status: response.status,
             url: url,
-            errorData: errorData,
             endpoint: endpoint,
+            errorData: errorData,
           });
+          // Also log the full error data as JSON for easier reading
+          if (response.status === 400) {
+            console.error('📋 Full Error Response:', JSON.stringify(errorData, null, 2));
+          }
         }
         
         // Handle different error formats
@@ -312,13 +316,13 @@ class ApiClient {
       password: credentials.password || '',
     };
     
-    // Debug log in development
-    if (import.meta.env.DEV) {
-      console.log('🔐 Login request:', { 
-        username: loginData.username, 
-        passwordLength: loginData.password.length 
-      });
-    }
+    // Debug log (always log for login to help diagnose issues)
+    console.log('🔐 Login request:', { 
+      username: loginData.username, 
+      passwordLength: loginData.password.length,
+      hasUsername: !!loginData.username,
+      hasPassword: !!loginData.password,
+    });
     
     const response = await this.request<LoginResponse>('/auth/login/', {
       method: 'POST',
