@@ -25,9 +25,9 @@ $PYTHON_CMD manage.py migrate --no-input || {
 }
 
 # Create default users (only if they don't exist)
-echo "👥 Checking default users..."
-$PYTHON_CMD manage.py create_default_users 2>/dev/null || {
-    echo "⚠️  User creation skipped (may already exist)"
+echo "👥 Creating/updating default users..."
+$PYTHON_CMD manage.py create_default_users || {
+    echo "⚠️  User creation failed - check logs above"
 }
 
 # Start server on the port Render provides

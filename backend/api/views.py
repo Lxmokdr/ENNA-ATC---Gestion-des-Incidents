@@ -79,10 +79,21 @@ def login(request):
     # Log request data for debugging
     import logging
     logger = logging.getLogger(__name__)
-    logger.info(f"Login attempt - Username: {request.data.get('username', 'NOT PROVIDED')}, "
-                f"Has password: {bool(request.data.get('password'))}, "
+    username = request.data.get('username', 'NOT PROVIDED')
+    has_password = bool(request.data.get('password'))
+    logger.info(f"Login attempt - Username: {username}, "
+                f"Has password: {has_password}, "
                 f"Content-Type: {request.content_type}, "
                 f"Data keys: {list(request.data.keys())}")
+    
+    # Check if user exists (for debugging)
+    if username and username != 'NOT PROVIDED':
+        try:
+            user = User.objects.get(username=username)
+            logger.info(f"User '{username}' exists. is_active: {user.is_active}, "
+                       f"has_password_set: {bool(user.password)}")
+        except User.DoesNotExist:
+            logger.warning(f"User '{username}' does not exist in database!")
     
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():

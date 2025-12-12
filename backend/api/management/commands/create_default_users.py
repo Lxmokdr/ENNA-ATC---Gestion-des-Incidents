@@ -38,12 +38,16 @@ class Command(BaseCommand):
                     user.save()
                     created_count += 1
                     self.stdout.write(
-                        self.style.SUCCESS(f'✅ Created user: {user_data["username"]}')
+                        self.style.SUCCESS(f'✅ Created user: {user_data["username"]} (password: {default_password})')
                     )
                 else:
+                    # Update password if user exists but password might be wrong
+                    # This ensures existing users have the correct default password
+                    user.set_password(default_password)
+                    user.save()
                     skipped_count += 1
                     self.stdout.write(
-                        self.style.WARNING(f'⏭️  User already exists: {user_data["username"]}')
+                        self.style.WARNING(f'⏭️  User already exists: {user_data["username"]} (password reset to: {default_password})')
                     )
             except IntegrityError:
                 skipped_count += 1
