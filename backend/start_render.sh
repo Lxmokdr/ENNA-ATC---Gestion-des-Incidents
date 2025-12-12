@@ -9,14 +9,77 @@ set +e
 echo "🚀 Starting ENNA Backend on Render..."
 echo "======================================"
 
+# Debug: Show current directory and what's available
+echo "📂 Current directory: $(pwd)"
+echo "📂 Contents: $(ls -la | head -10)"
+
 # Activate virtual environment
-if [ -d "venv" ]; then
+# Check multiple possible locations for venv
+VENV_FOUND=false
+if [ -d "venv" ] && [ -f "venv/bin/activate" ]; then
     source venv/bin/activate
     PYTHON_CMD="venv/bin/python"
-    echo "✅ Using virtual environment"
-else
-    PYTHON_CMD="python3"
-    echo "⚠️  No virtual environment found, using system Python"
+    VENV_FOUND=true
+    echo "✅ Using virtual environment: ./venv"
+elif [ -d "../venv" ] && [ -f "../venv/bin/activate" ]; then
+    source ../venv/bin/activate
+    PYTHON_CMD="../venv/bin/python"
+    VENV_FOUND=true
+    echo "✅ Using virtual environment: ../venv"
+elif [ -d "/opt/render/project/src/backend/venv" ] && [ -f "/opt/render/project/src/backend/venv/bin/activate" ]; then
+    source /opt/render/project/src/backend/venv/bin/activate
+    PYTHON_CMD="/opt/render/project/src/backend/venv/bin/python"
+    VENV_FOUND=true
+    echo "✅ Using virtual environment: /opt/render/project/src/backend/venv"
+fi
+
+if [ "$VENV_FOUND" = false ]; then
+    echo "⚠️  No virtual environment found!"
+    echo "   Current directory: $(pwd)"
+    echo "   Looking for venv in:"
+    echo "     - ./venv ($([ -d "venv" ] && echo "EXISTS" || echo "NOT FOUND"))"
+    echo "     - ../venv ($([ -d "../venv" ] && echo "EXISTS" || echo "NOT FOUND"))"
+    echo "     - /opt/render/project/src/backend/venv ($([ -d "/opt/render/project/src/backend/venv" ] && echo "EXISTS" || echo "NOT FOUND"))"
+    echo ""
+    echo "   Attempting to recreate venv and install dependencies..."
+    
+    # Try to create venv and install dependencies
+    if python3 -m venv venv 2>/dev/null; then
+        source venv/bin/activate
+        echo "   ✅ Created new virtual environment"
+        echo "   📦 Installing dependencies from requirements.txt..."
+        pip install --upgrade pip >/dev/null 2>&1
+        if [ -f "requirements.txt" ]; then
+            pip install -r requirements.txt >/dev/null 2>&1
+            if [ $? -eq 0 ]; then
+                echo "   ✅ Dependencies installed successfully"
+                PYTHON_CMD="venv/bin/python"
+                VENV_FOUND=true
+            else
+                echo "   ❌ Failed to install dependencies"
+            fi
+        else
+            echo "   ❌ requirements.txt not found!"
+        fi
+    else
+        echo "   ❌ Failed to create virtual environment"
+    fi
+    
+    # If still no venv, try system Python
+    if [ "$VENV_FOUND" = false ]; then
+        echo "   Trying to use system Python..."
+        PYTHON_CMD="python3"
+        
+        # Verify Django is available
+        if python3 -c "import django" 2>/dev/null; then
+            echo "   ✅ Django is available in system Python"
+        else
+            echo "   ❌ ERROR: Django is NOT available in system Python!"
+            echo "   The build process must have failed to create the venv or install dependencies."
+            echo "   Please check the build logs."
+            exit 1
+        fi
+    fi
 fi
 
 # Export all database environment variables (Render sets these automatically)
