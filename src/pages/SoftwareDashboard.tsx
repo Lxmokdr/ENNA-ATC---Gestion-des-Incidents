@@ -278,9 +278,6 @@ export default function SoftwareDashboard() {
                     {incident.type_d_anomalie && (
                       <> • Type d'anomalie: {incident.type_d_anomalie}</>
                     )}
-                    {incident.game && (
-                      <> • Game: {incident.game}</>
-                    )}
                   </p>
                 </div>
               </div>

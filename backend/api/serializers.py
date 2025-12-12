@@ -1,16 +1,59 @@
-from rest_framework import serializers
-from django.contrib.auth import authenticate
-from rest_framework_simplejwt.tokens import RefreshToken
-from .models import User, HardwareIncident, SoftwareIncident, Report, Equipement
-from django.utils import timezone
+# Standard library imports
 from datetime import datetime
+
+# Django imports
+from django.contrib.auth import authenticate
+from django.utils import timezone
+
+# Django REST Framework imports
+from rest_framework import serializers
+from rest_framework_simplejwt.tokens import RefreshToken
+
+# Local imports
+from .models import User, HardwareIncident, SoftwareIncident, Report, Equipement
 
 
 class UserSerializer(serializers.ModelSerializer):
+    password = serializers.CharField(write_only=True, required=False, min_length=8)
+    
     class Meta:
         model = User
-        fields = ['id', 'username', 'role', 'created_at']
+        fields = ['id', 'username', 'role', 'created_at', 'is_active', 'is_staff', 'is_superuser', 'password']
         read_only_fields = ['id', 'created_at']
+    
+    def create(self, validated_data):
+        """Create a new user with password"""
+        password = validated_data.pop('password', None)
+        if not password:
+            raise serializers.ValidationError({'password': 'Le mot de passe est requis'})
+        user = User.objects.create(**validated_data)
+        user.set_password(password)
+        # Set is_staff and is_superuser based on role
+        if user.role == 'superadmin':
+            user.is_staff = True
+            user.is_superuser = True
+        else:
+            user.is_staff = False
+            user.is_superuser = False
+        user.save()
+        return user
+    
+    def update(self, instance, validated_data):
+        """Update user, handling password separately"""
+        password = validated_data.pop('password', None)
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        if password:
+            instance.set_password(password)
+        # Update is_staff and is_superuser based on role
+        if instance.role == 'superadmin':
+            instance.is_staff = True
+            instance.is_superuser = True
+        else:
+            instance.is_staff = False
+            instance.is_superuser = False
+        instance.save()
+        return instance
 
 
 class LoginSerializer(serializers.Serializer):
@@ -52,7 +95,7 @@ class HardwareIncidentSerializer(serializers.ModelSerializer):
             'numero_de_serie', 'equipement_id', 'equipment', 'description',
             'anomalie_observee', 'action_realisee', 'piece_de_rechange_utilisee',
             'etat_de_equipement_apres_intervention', 'recommendation', 'duree_arret',
-            'created_at', 'updated_at'
+            'maintenance_type', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']
     
@@ -82,6 +125,24 @@ class HardwareIncidentSerializer(serializers.ModelSerializer):
             now = timezone.now()  # UTC datetime
             attrs['time'] = now.time()  # UTC time component (HH:MM:SS)
         return attrs
+    
+    def update(self, instance, validated_data):
+        """
+        Update instance, ensuring nom_de_equipement from request is preserved.
+        Don't override it with equipment name from equipement_id lookup.
+        """
+        # Preserve nom_de_equipement from validated_data if provided
+        # This ensures manual changes to equipment name are saved
+        nom_de_equipement = validated_data.pop('nom_de_equipement', None)
+        if nom_de_equipement is not None:
+            instance.nom_de_equipement = nom_de_equipement
+        
+        # Update all other fields normally
+        for attr, value in validated_data.items():
+            setattr(instance, attr, value)
+        
+        instance.save()
+        return instance
 
 
 class SoftwareIncidentSerializer(serializers.ModelSerializer):
@@ -91,9 +152,8 @@ class SoftwareIncidentSerializer(serializers.ModelSerializer):
         model = SoftwareIncident
         fields = [
             'id', 'incident_type', 'date', 'time', 'simulateur', 'salle_operationnelle',
-            'server', 'game', 'partition', 'group', 'exercice', 'secteur',
-            'position_STA', 'position_logique', 'type_d_anomalie', 'indicatif',
-            'mode_radar', 'FL', 'longitude', 'latitude', 'code_SSR', 'sujet',
+            'server', 'partition', 'position_STA', 'type_d_anomalie', 'indicatif',
+            'nom_radar', 'FL', 'longitude', 'latitude', 'code_SSR', 'sujet',
             'description', 'commentaires', 'created_at', 'updated_at'
         ]
         read_only_fields = ['id', 'created_at', 'updated_at']

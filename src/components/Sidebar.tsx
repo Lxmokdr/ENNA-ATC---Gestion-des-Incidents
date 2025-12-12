@@ -1,16 +1,59 @@
+// React Router imports
 import { NavLink } from "react-router-dom";
+
+// Third-party imports
 import { Home, Cpu, HardDrive, FileText, History, Server } from "lucide-react";
+
+// Local hook imports
+import { useAuth } from "@/hooks/useAuth";
+import { usePermissions } from "@/hooks/usePermissions";
+
+// Local utility imports
 import { cn } from "@/lib/utils";
 
-const navigation = [
-  { name: "Tableau de bord", href: "/", icon: Home },
-  { name: "Incidents Hardware", href: "/hardware", icon: Cpu },
-  { name: "Incidents Software", href: "/software", icon: HardDrive },
-  { name: "Équipements", href: "/equipment", icon: Server },
-  { name: "Historique Global", href: "/history", icon: History },
-];
-
 export function Sidebar() {
+  const permissions = usePermissions();
+  const { user } = useAuth();
+  const isChefDepartement = user?.role === 'chef_departement';
+  const isSuperadmin = user?.role === 'superadmin';
+
+  // Build navigation items based on role
+  const navigationItems = [];
+
+  // Dashboard - only for chef_departement and superadmin
+  if (permissions.canAccessDashboards) {
+    navigationItems.push({ name: "Tableau de bord", href: "/", icon: Home });
+  }
+
+  // For chef_departement: only show history tabs, no incidents tabs
+  if (isChefDepartement) {
+    // Chef de département sees separate history tabs
+    if (permissions.canAccessHardwareIncidents) {
+      navigationItems.push({ name: "Historique Hardware", href: "/history/hardware", icon: Cpu });
+    }
+    if (permissions.canAccessSoftwareIncidents) {
+      navigationItems.push({ name: "Historique Software", href: "/history/software", icon: HardDrive });
+    }
+  } else {
+    // For other roles: show incidents tabs and single history
+    if (permissions.canAccessHardwareIncidents) {
+      navigationItems.push({ name: "Incidents Hardware", href: "/hardware", icon: Cpu });
+    }
+    if (permissions.canAccessSoftwareIncidents) {
+      navigationItems.push({ name: "Incidents Software", href: "/software", icon: HardDrive });
+    }
+    if (permissions.canAccessEquipment) {
+      navigationItems.push({ name: "Équipements", href: "/equipment", icon: Server });
+    }
+    // Single history tab for other roles
+    navigationItems.push({ name: "Historique", href: "/history", icon: History });
+  }
+
+  // User management - only for superadmin
+  if (isSuperadmin) {
+    navigationItems.push({ name: "Gestion Utilisateurs", href: "/users", icon: FileText });
+  }
+
   return (
     <aside className="fixed left-0 top-0 z-40 h-screen w-64 bg-sidebar border-r border-sidebar-border">
       <div className="flex h-full flex-col">
@@ -26,7 +69,7 @@ export function Sidebar() {
 
         {/* Navigation */}
         <nav className="flex-1 space-y-1 px-3 py-4">
-          {navigation.map((item) => (
+          {navigationItems.map((item) => (
             <NavLink
               key={item.name}
               to={item.href}

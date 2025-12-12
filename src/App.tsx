@@ -1,10 +1,20 @@
+// React Router imports
+import { BrowserRouter, Routes, Route } from "react-router-dom";
+
+// Third-party imports
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+
+// Local hook imports
 import { AuthProvider, useAuth } from "./hooks/useAuth";
+
+// Local component imports
 import { Layout } from "./components/Layout";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+
+// Page imports
 import Login from "./pages/Login";
 import AdminDashboard from "./pages/AdminDashboard";
 import HardwareDashboard from "./pages/HardwareDashboard";
@@ -14,7 +24,10 @@ import SoftwareIncidents from "./pages/SoftwareIncidents";
 import EditIncident from "./pages/EditIncident";
 import AddReport from "./pages/AddReport";
 import History from "./pages/History";
+import HistoryHardware from "./pages/HistoryHardware";
+import HistorySoftware from "./pages/HistorySoftware";
 import Equipment from "./pages/Equipment";
+import Users from "./pages/Users";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -44,15 +57,95 @@ const AppRoutes = () => {
   return (
     <Layout>
       <Routes>
-        <Route path="/" element={<AdminDashboard />} />
-        <Route path="/dashboard/hardware" element={<HardwareDashboard />} />
-        <Route path="/dashboard/software" element={<SoftwareDashboard />} />
-        <Route path="/hardware" element={<HardwareIncidents />} />
-        <Route path="/software" element={<SoftwareIncidents />} />
-        <Route path="/equipment" element={<Equipment />} />
-        <Route path="/incident/edit/:id" element={<EditIncident />} />
-        <Route path="/software/report/:id" element={<AddReport />} />
+        <Route 
+          path="/" 
+          element={
+            <ProtectedRoute requirePermission="canAccessDashboards">
+              <AdminDashboard />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/dashboard/hardware" 
+          element={
+            <ProtectedRoute requirePermission="canAccessDashboards">
+              <HardwareDashboard />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/dashboard/software" 
+          element={
+            <ProtectedRoute requirePermission="canAccessDashboards">
+              <SoftwareDashboard />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/hardware" 
+          element={
+            <ProtectedRoute requirePermission="canAccessHardwareIncidents">
+              <HardwareIncidents />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/software" 
+          element={
+            <ProtectedRoute requirePermission="canAccessSoftwareIncidents">
+              <SoftwareIncidents />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/equipment" 
+          element={
+            <ProtectedRoute requirePermission="canAccessEquipment">
+              <Equipment />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/incident/edit/:id" 
+          element={
+            <ProtectedRoute requireAny={['canModifyHardwareIncidents', 'canModifySoftwareIncidents']}>
+              <EditIncident />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/software/report/:id" 
+          element={
+            <ProtectedRoute requirePermission="canAccessReports">
+              <AddReport />
+            </ProtectedRoute>
+          } 
+        />
         <Route path="/history" element={<History />} />
+        <Route 
+          path="/history/hardware" 
+          element={
+            <ProtectedRoute requirePermission="canAccessHardwareIncidents">
+              <HistoryHardware />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/history/software" 
+          element={
+            <ProtectedRoute requirePermission="canAccessSoftwareIncidents">
+              <HistorySoftware />
+            </ProtectedRoute>
+          } 
+        />
+        <Route 
+          path="/users" 
+          element={
+            <ProtectedRoute requirePermission="isSuperadmin">
+              <Users />
+            </ProtectedRoute>
+          } 
+        />
         <Route path="*" element={<NotFound />} />
       </Routes>
     </Layout>

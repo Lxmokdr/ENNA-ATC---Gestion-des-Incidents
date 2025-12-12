@@ -1,12 +1,11 @@
-import { useNavigate } from "react-router-dom";
 import { IncidentForm, IncidentFormData } from "@/components/IncidentForm";
-import { IncidentTable } from "@/components/IncidentTable";
 import { useIncidents } from "@/hooks/useIncidents";
+import { usePermissions } from "@/hooks/usePermissions";
 import { toast } from "sonner";
 
 export default function HardwareIncidents() {
-  const navigate = useNavigate();
-  const { hardwareIncidents, addHardwareIncident, deleteHardwareIncident } = useIncidents();
+  const { addHardwareIncident } = useIncidents();
+  const permissions = usePermissions();
 
   const handleSubmit = async (data: IncidentFormData) => {
     try {
@@ -17,14 +16,6 @@ export default function HardwareIncidents() {
     }
   };
 
-  const handleEdit = (id: number) => {
-    navigate(`/incident/edit/${id}`);
-  };
-
-  const handleDelete = (id: number) => {
-    deleteHardwareIncident(id);
-    toast.success("Incident supprimé");
-  };
 
   return (
     <div className="space-y-6">
@@ -37,22 +28,19 @@ export default function HardwareIncidents() {
         </p>
       </div>
 
-      <IncidentForm
-        onSubmit={handleSubmit}
-        type="hardware"
-        title="Nouveau incident hardware"
-      />
-
-      <div className="space-y-4">
-        <h2 className="text-2xl font-semibold text-foreground">
-          Historique des incidents hardware
-        </h2>
-        <IncidentTable
-          incidents={hardwareIncidents}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
+      {permissions.canModifyHardwareIncidents && (
+        <IncidentForm
+          onSubmit={handleSubmit}
+          type="hardware"
+          title="Nouveau incident hardware"
         />
-      </div>
+      )}
+      {!permissions.canModifyHardwareIncidents && (
+        <div className="text-center py-8 text-muted-foreground">
+          Accès en lecture seule. Vous ne pouvez pas créer de nouveaux incidents matériels.
+        </div>
+      )}
+
     </div>
   );
 }

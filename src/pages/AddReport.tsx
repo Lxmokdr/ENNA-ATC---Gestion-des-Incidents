@@ -42,7 +42,7 @@ export default function AddReport() {
         
         // Add timeout to prevent infinite loading
         const timeoutId = setTimeout(() => {
-          console.warn("Report loading timeout - setting loading to false");
+          // Report loading timeout - set loading to false
           setIsLoading(false);
         }, 10000); // 10 second timeout
         

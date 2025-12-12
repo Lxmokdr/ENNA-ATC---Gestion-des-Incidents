@@ -7,8 +7,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Badge } from "@/components/ui/badge";
 import { Edit, Trash2, FileText, Printer } from "lucide-react";
+import { usePermissions } from "@/hooks/usePermissions";
 import { ConfirmationDialog } from "@/components/ConfirmationDialog";
 import { useState } from "react";
 import { Report } from "@/services/api";
@@ -35,18 +35,14 @@ export interface Incident {
   piece_de_rechange_utilisee?: string;
   etat_de_equipement_apres_intervention?: string;
   recommendation?: string;
+  maintenance_type?: 'preventive' | 'corrective';
   // Software fields
   simulateur?: boolean;
   salle_operationnelle?: boolean;
-  game?: string;
-  group?: string;
-  exercice?: string;
-  secteur?: string;
   position_STA?: string;
-  position_logique?: string;
   type_d_anomalie?: string;
   indicatif?: string;
-  mode_radar?: string;
+  nom_radar?: string;
   FL?: string;
   longitude?: string;
   latitude?: string;
@@ -72,9 +68,18 @@ export function IncidentTable({
   showReportButton = false,
   reports = []
 }: IncidentTableProps) {
+  const permissions = usePermissions();
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [editDialogOpen, setEditDialogOpen] = useState(false);
   const [selectedIncident, setSelectedIncident] = useState<Incident | null>(null);
+  
+  const canModifyIncident = (incident: Incident) => {
+    if (incident.incident_type === 'hardware') {
+      return permissions.canModifyHardwareIncidents;
+    } else {
+      return permissions.canModifySoftwareIncidents;
+    }
+  };
 
   const handleDeleteClick = (incident: Incident) => {
     setSelectedIncident(incident);
@@ -95,6 +100,155 @@ export function IncidentTable({
   const handleEditConfirm = () => {
     if (selectedIncident) {
       onEdit?.(selectedIncident.id);
+    }
+  };
+  
+  const handlePrintReport = async (incident: Incident) => {
+    if (incident.incident_type !== 'software') return;
+    
+    try {
+      const { apiClient } = await import('@/services/api');
+      const reportsResponse = await apiClient.getReports({ incident: incident.id });
+      if (!reportsResponse.results || reportsResponse.results.length === 0) {
+        alert('Aucun rapport disponible pour cet incident');
+        return;
+      }
+      
+      const report = reportsResponse.results[0];
+      const printWindow = window.open('', '_blank');
+      if (!printWindow) return;
+      
+      const escapeHtml = (text: string | undefined | null) => {
+        if (!text) return 'N/A';
+        return String(text)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;')
+          .replace(/'/g, '&#039;');
+      };
+      
+      const htmlContent = `
+        <!DOCTYPE html>
+        <html>
+          <head>
+            <title>Rapport d'Incident Logiciel #${incident.id}</title>
+            <style>
+              body { 
+                font-family: Arial, sans-serif; 
+                padding: 20px; 
+                max-width: 1200px; 
+                margin: 0 auto;
+                background: #fff;
+              }
+              .header {
+                text-align: center;
+                margin-bottom: 30px;
+                border-bottom: 3px solid #007bff;
+                padding-bottom: 20px;
+              }
+              .header h1 {
+                color: #007bff;
+                margin: 0;
+                font-size: 28px;
+              }
+              .header p {
+                color: #666;
+                margin: 5px 0;
+              }
+              table {
+                width: 100%;
+                border-collapse: collapse;
+                margin: 20px 0;
+                background: white;
+                table-layout: fixed;
+              }
+              th {
+                background-color: #007bff;
+                color: white;
+                padding: 12px;
+                text-align: left;
+                font-weight: bold;
+                border: 1px solid #0056b3;
+              }
+              td {
+                padding: 12px;
+                border: 1px solid #ddd;
+                vertical-align: top;
+                word-wrap: break-word;
+                overflow-wrap: break-word;
+              }
+              .label {
+                font-weight: bold;
+                color: #333;
+                width: 35%;
+                background-color: #f8f9fa;
+              }
+              .value {
+                color: #555;
+                width: 65%;
+                word-wrap: break-word;
+              }
+              .description-field {
+                white-space: pre-wrap;
+                line-height: 1.6;
+              }
+              @media print {
+                body { padding: 10px; margin: 0; }
+                .header { page-break-after: avoid; margin-bottom: 20px; }
+                table { page-break-inside: avoid; width: 100% !important; border-collapse: collapse !important; table-layout: fixed !important; }
+                td, th { padding: 8px !important; border: 1px solid #000 !important; page-break-inside: avoid; }
+                .label { width: 35% !important; background-color: #f8f9fa !important; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+                .value { width: 65% !important; }
+                tr { page-break-inside: avoid; }
+              }
+            </style>
+          </head>
+          <body>
+            <div class="header">
+              <h1>Rapport d'Incident Logiciel #${incident.id}</h1>
+              <p>Établissement National de la Navigation Aérienne (ENNA)</p>
+              <p>Document généré le ${new Date().toLocaleString('fr-FR')}</p>
+            </div>
+            
+            <table>
+              <tr>
+                <th colspan="2" style="text-align: center;">DÉTAILS DU RAPPORT</th>
+              </tr>
+              <tr>
+                <td class="label">Date du rapport</td>
+                <td class="value">${escapeHtml(report.date)}</td>
+              </tr>
+              <tr>
+                <td class="label">Heure du rapport</td>
+                <td class="value">${escapeHtml(report.time)}</td>
+              </tr>
+              <tr>
+                <td class="label">Anomalie</td>
+                <td class="value">${escapeHtml(report.anomaly)}</td>
+              </tr>
+              <tr>
+                <td class="label">Analyse</td>
+                <td class="value description-field">${escapeHtml(report.analysis)}</td>
+              </tr>
+              <tr>
+                <td class="label">Conclusion</td>
+                <td class="value description-field">${escapeHtml(report.conclusion)}</td>
+              </tr>
+            </table>
+            
+            <script>
+              window.onload = () => window.print();
+            </script>
+          </body>
+        </html>
+      `;
+      
+      printWindow.document.write(htmlContent);
+      printWindow.document.close();
+    } catch (err) {
+      console.error('Error printing report:', err);
+      alert('Erreur lors de l\'impression du rapport');
     }
   };
   
@@ -133,18 +287,46 @@ export function IncidentTable({
     };
     
     // Helper to format field groups
-    const renderFieldGroup = (label: string, fields: Array<{label: string, value: any}>) => {
-      return `
+    const renderFieldGroup = (label: string, fields: Array<{label: string, value: any}>, fieldsPerRow: number = 1) => {
+      const totalCols = fieldsPerRow * 2; // Each field has label + value = 2 columns
+      const headerRow = label ? `
         <tr>
-          <th colspan="2" style="text-align: left; background-color: #f0f0f0; color: #333;">${label}</th>
+          <th colspan="${totalCols}" style="text-align: left; background-color: #f0f0f0; color: #333;">${label}</th>
         </tr>
-        ${fields.map(field => `
-          <tr>
-            <td class="label">${field.label}</td>
-            <td class="value">${escapeHtml(field.value)}</td>
+      ` : '';
+      
+      if (fieldsPerRow === 1) {
+        // Single column layout (default) - field takes full width
+        return headerRow + fields.map(field => `
+          <tr class="single-field-row" style="height: auto !important; min-height: 0 !important; max-height: none !important;">
+            <td class="label single-field-label" style="width: 35% !important; min-width: 35% !important; max-width: 35% !important; height: auto !important; min-height: 0 !important; max-height: none !important; vertical-align: top !important; padding: 8px 12px !important; line-height: 1.3 !important; overflow: visible !important;">${field.label}</td>
+            <td class="value single-field-value" style="width: 65% !important; min-width: 65% !important; max-width: 65% !important; height: auto !important; min-height: 0 !important; max-height: none !important; vertical-align: top !important; padding: 8px 12px !important; line-height: 1.3 !important; overflow: visible !important; word-break: break-word;">${escapeHtml(field.value)}</td>
           </tr>
-        `).join('')}
-      `;
+        `).join('');
+      } else {
+        // Multi-column layout (fields in same row) - each field pair takes equal width
+        // For 2 fields per row: each field gets 50% (label ~20% + value ~30% of total width)
+        const fieldWidthPercent = 100 / fieldsPerRow; // 50% for 2 fields
+        const labelWidthPercent = fieldWidthPercent * 0.4; // 40% of field width for label (20% of total)
+        const valueWidthPercent = fieldWidthPercent * 0.6; // 60% of field width for value (30% of total)
+        
+        const rows: string[] = [];
+        for (let i = 0; i < fields.length; i += fieldsPerRow) {
+          const rowFields = fields.slice(i, i + fieldsPerRow);
+          // Fill remaining columns if needed
+          const remainingFields = fieldsPerRow - rowFields.length;
+          rows.push(`
+            <tr class="two-field-row" style="height: auto !important; min-height: 0 !important; max-height: none !important;">
+              ${rowFields.map(field => `
+                <td class="label two-field-label" style="width: ${labelWidthPercent}% !important; min-width: ${labelWidthPercent}% !important; max-width: ${labelWidthPercent}% !important; height: auto !important; min-height: 0 !important; max-height: none !important; vertical-align: top !important; padding: 8px 12px !important; line-height: 1.3 !important; overflow: visible !important;">${field.label}</td>
+                <td class="value two-field-value" style="width: ${valueWidthPercent}% !important; min-width: ${valueWidthPercent}% !important; max-width: ${valueWidthPercent}% !important; height: auto !important; min-height: 0 !important; max-height: none !important; vertical-align: top !important; padding: 8px 12px !important; line-height: 1.3 !important; overflow: visible !important; word-break: break-word;">${escapeHtml(field.value)}</td>
+              `).join('')}
+              ${remainingFields > 0 ? Array(remainingFields * 2).fill('<td style="width: 0; height: 0; padding: 0; border: none; display: none;"></td>').join('') : ''}
+            </tr>
+          `);
+        }
+        return headerRow + rows.join('');
+      }
     };
     
     // Create HTML content matching form layout
@@ -157,8 +339,9 @@ export function IncidentTable({
             body { 
               font-family: Arial, sans-serif; 
               padding: 20px; 
-              max-width: 1200px; 
-              margin: 0 auto;
+              max-width: 100%; 
+              width: 100%;
+              margin: 0;
               background: #fff;
             }
             .header {
@@ -210,6 +393,9 @@ export function IncidentTable({
               margin: 20px 0;
               background: white;
               box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+              table-layout: fixed;
+              border-spacing: 0;
+              height: auto !important;
             }
             th {
               background-color: #007bff;
@@ -220,9 +406,21 @@ export function IncidentTable({
               border: 1px solid #0056b3;
             }
             td {
-              padding: 12px;
+              padding: 8px 12px;
               border: 1px solid #ddd;
               vertical-align: top;
+              word-wrap: break-word;
+              overflow-wrap: break-word;
+              height: auto !important;
+              min-height: 0 !important;
+              max-height: none !important;
+              line-height: 1.3;
+              overflow: visible;
+            }
+            tr {
+              height: auto !important;
+              min-height: 0 !important;
+              max-height: none !important;
             }
             tr:nth-child(even) {
               background-color: #f9f9f9;
@@ -230,12 +428,50 @@ export function IncidentTable({
             .label {
               font-weight: bold;
               color: #333;
-              width: 35%;
               background-color: #f8f9fa;
             }
             .value {
               color: #555;
               word-wrap: break-word;
+              overflow-wrap: break-word;
+            }
+            /* Single field rows - full width */
+            .single-field-row {
+              height: auto !important;
+              min-height: 0 !important;
+            }
+            .single-field-row .single-field-label {
+              width: 35% !important;
+              min-width: 35% !important;
+              max-width: 35% !important;
+              height: auto !important;
+              min-height: 0 !important;
+            }
+            .single-field-row .single-field-value {
+              width: 65% !important;
+              min-width: 65% !important;
+              max-width: 65% !important;
+              height: auto !important;
+              min-height: 0 !important;
+            }
+            /* Two field rows - half width each */
+            .two-field-row {
+              height: auto !important;
+              min-height: 0 !important;
+            }
+            .two-field-row .two-field-label {
+              width: 20% !important;
+              min-width: 20% !important;
+              max-width: 20% !important;
+              height: auto !important;
+              min-height: 0 !important;
+            }
+            .two-field-row .two-field-value {
+              width: 30% !important;
+              min-width: 30% !important;
+              max-width: 30% !important;
+              height: auto !important;
+              min-height: 0 !important;
             }
             .description-field {
               white-space: pre-wrap;
@@ -251,18 +487,106 @@ export function IncidentTable({
               padding-bottom: 10px;
               margin-bottom: 20px;
             }
-            @media print {
-              body { padding: 10px; }
-              .actions { display: none !important; }
-              .header { page-break-after: avoid; }
-              table { page-break-inside: avoid; }
+              @media print {
+                @page {
+                  margin: 1cm;
+                  size: A4;
+                }
+                body { 
+                  padding: 0 !important; 
+                  margin: 0 !important;
+                  max-width: 100% !important;
+                  width: 100% !important;
+                }
+                .actions { display: none !important; }
+                .header { 
+                  page-break-after: avoid; 
+                  margin-bottom: 20px;
+                }
+                table { 
+                  page-break-inside: avoid;
+                  width: 100% !important;
+                  max-width: 100% !important;
+                  border-collapse: collapse !important;
+                  table-layout: fixed !important;
+                  border-spacing: 0 !important;
+                  margin: 0 !important;
+                  height: auto !important;
+                }
+                td, th {
+                  padding: 8px !important;
+                  border: 1px solid #000 !important;
+                  page-break-inside: avoid;
+                  height: auto !important;
+                  min-height: 0 !important;
+                  max-height: none !important;
+                  vertical-align: top !important;
+                  overflow: visible !important;
+                  line-height: 1.4 !important;
+                  white-space: normal !important;
+                }
+                tr {
+                  height: auto !important;
+                  min-height: 0 !important;
+                  max-height: none !important;
+                }
+                /* Remove any rowspan or colspan issues */
+                td[rowspan], th[rowspan] {
+                  height: auto !important;
+                  min-height: 0 !important;
+                }
+                /* Ensure cells only take space they need - especially for two-field rows */
+                .single-field-row td,
+                .two-field-row td {
+                  height: auto !important;
+                  min-height: 0 !important;
+                  max-height: none !important;
+                  padding: 6px 8px !important;
+                  line-height: 1.3 !important;
+                }
+                /* Specific fix for equipment fields that might have long text */
+                .two-field-row .value {
+                  word-break: break-word !important;
+                  overflow-wrap: break-word !important;
+                  hyphens: auto !important;
+                }
+              /* Single field rows - preserve full width (35% label + 65% value) */
+              .single-field-row .single-field-label {
+                width: 35% !important;
+                min-width: 35% !important;
+                max-width: 35% !important;
+              }
+              .single-field-row .single-field-value {
+                width: 65% !important;
+                min-width: 65% !important;
+                max-width: 65% !important;
+              }
+              /* Two field rows - preserve half width (20% label + 30% value each) */
+              .two-field-row .two-field-label {
+                width: 20% !important;
+                min-width: 20% !important;
+                max-width: 20% !important;
+              }
+              .two-field-row .two-field-value {
+                width: 30% !important;
+                min-width: 30% !important;
+                max-width: 30% !important;
+              }
+              .label {
+                background-color: #f8f9fa !important;
+                -webkit-print-color-adjust: exact;
+                print-color-adjust: exact;
+              }
+              tr {
+                page-break-inside: avoid;
+              }
             }
           </style>
         </head>
         <body>
           <div class="header">
-            <h1>Incident ${incidentTypeLabel} #${incident.id}</h1>
-            <p>École Nationale de l'Aviation Civile (ENNA)</p>
+            <h1>Incident ${incidentTypeLabel}</h1>
+            <p>Établissement National de la Navigation Aérienne (ENNA)</p>
             <p>Document généré le ${new Date().toLocaleString('fr-FR')}</p>
           </div>
           
@@ -271,30 +595,41 @@ export function IncidentTable({
             ${!isHardware ? `
               ${report ? `
                 <button class="secondary" onclick="printReport()">Imprimer le rapport</button>
-                <button class="secondary" onclick="window.open('/software/report/${incident.id}', '_blank')">Modifier le rapport</button>
+                <button class="secondary" onclick="window.open('/software/report', '_blank')">Modifier le rapport</button>
               ` : `
-                <button class="secondary" onclick="window.open('/software/report/${incident.id}', '_blank')">Ajouter un rapport</button>
+                <button class="secondary" onclick="window.open('/software/report', '_blank')">Ajouter un rapport</button>
               `}
             ` : ''}
           </div>
           
           <table>
-            <tr>
-              <th colspan="2" style="text-align: center; font-size: 18px;">INFORMATIONS GÉNÉRALES</th>
-            </tr>
+
             ${renderFieldGroup('', [
               { label: 'ID de l\'Incident', value: incident.id },
+            ])}
+            ${renderFieldGroup('', [
               { label: 'Date', value: incident.date },
+            ])}
+            ${renderFieldGroup('', [
               { label: 'Heure (GMT)', value: incident.time }
             ])}
             ${isHardware ? `
               ${renderFieldGroup('ÉQUIPEMENT', [
                 { label: 'Nom de l\'équipement', value: incident.nom_de_equipement },
+              ])}
+              ${renderFieldGroup('', [
                 { label: 'Partition', value: incident.partition },
-                { label: 'Numéro de série', value: incident.numero_de_serie }
+              ])}
+              ${renderFieldGroup('', [
+                { label: 'Numéro de série', value: incident.numero_de_serie },
+              ])}
+              ${renderFieldGroup('', [
+                { label: 'Type de maintenance', value: incident.maintenance_type === 'preventive' ? 'Préventive' : incident.maintenance_type === 'corrective' ? 'Corrective' : 'Non spécifié' }
               ])}
               ${renderFieldGroup('DESCRIPTION', [
                 { label: 'Description', value: incident.description },
+              ])}
+              ${renderFieldGroup('', [
                 { label: 'Anomalie observée', value: incident.anomalie_observee }
               ])}
               ${renderFieldGroup('INTERVENTION', [
@@ -306,31 +641,38 @@ export function IncidentTable({
             ` : `
               ${renderFieldGroup('CONFIGURATION', [
                 { label: 'Simulateur', value: incident.simulateur === true ? 'Oui' : incident.simulateur === false ? 'Non' : 'Non spécifié' },
-                { label: 'Salle opérationnelle', value: incident.salle_operationnelle === true ? 'Oui' : incident.salle_operationnelle === false ? 'Non' : 'Non spécifié' },
-                { label: 'Game', value: incident.game },
-                { label: 'Partition', value: incident.partition },
-                { label: 'Group', value: incident.group },
-                { label: 'Exercice', value: incident.exercice },
-                { label: 'Secteur', value: incident.secteur }
               ])}
-              ${renderFieldGroup('POSITION', [
-                { label: 'Position STA', value: incident.position_STA },
-                { label: 'Position logique', value: incident.position_logique }
+              ${renderFieldGroup('', [
+                { label: 'Salle opérationnelle', value: incident.salle_operationnelle === true ? 'Oui' : incident.salle_operationnelle === false ? 'Non' : 'Non spécifié' },
+              ])}
+              ${renderFieldGroup('', [
+                { label: 'Partition', value: incident.partition },
+              ])}
+              ${renderFieldGroup('', [
+                { label: 'Position STA', value: incident.position_STA }
               ])}
               ${renderFieldGroup('ANOMALIE', [
                 { label: 'Type d\'anomalie', value: incident.type_d_anomalie },
                 { label: 'Indicatif', value: incident.indicatif },
-                { label: 'Mode radar', value: incident.mode_radar },
+                { label: 'Nom radar', value: incident.nom_radar },
                 { label: 'FL (ou altitude)', value: incident.FL }
               ])}
               ${renderFieldGroup('COORDONNÉES', [
                 { label: 'Longitude', value: incident.longitude },
+              ])}
+              ${renderFieldGroup('', [
                 { label: 'Latitude', value: incident.latitude },
+              ])}
+              ${renderFieldGroup('', [
                 { label: 'Code SSR', value: incident.code_SSR }
               ])}
               ${renderFieldGroup('DESCRIPTION', [
                 { label: 'Sujet', value: incident.sujet },
+              ])}
+              ${renderFieldGroup('', [
                 { label: 'Description', value: incident.description },
+              ])}
+              ${renderFieldGroup('', [
                 { label: 'Commentaires', value: incident.commentaires }
               ])}
             `}
@@ -345,7 +687,11 @@ export function IncidentTable({
                 </tr>
                 ${renderFieldGroup('', [
                   { label: 'Date du rapport', value: report.date },
+                ])}
+                ${renderFieldGroup('', [
                   { label: 'Heure du rapport', value: report.time },
+                ])}
+                ${renderFieldGroup('', [
                   { label: 'Anomalie', value: report.anomaly }
                 ])}
                 <tr>
@@ -440,7 +786,7 @@ export function IncidentTable({
                 )}
                 <TableCell className="text-right">
                   <div className="flex justify-end gap-2">
-                    {showReportButton && incident.incident_type === 'software' && (
+                    {showReportButton && incident.incident_type === 'software' && permissions.canModifyReports && (
                       <Button
                         variant="outline"
                         size="sm"
@@ -453,16 +799,30 @@ export function IncidentTable({
                         </span>
                       </Button>
                     )}
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => handleEditClick(incident)}
-                      className="flex items-center gap-2"
-                    >
-                      <Edit className="h-4 w-4" />
-                      <span className="hidden sm:inline">Modifier</span>
-                    </Button>
-                    {!showReportButton && (
+                    {incident.incident_type === 'software' && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handlePrintReport(incident)}
+                        className="flex items-center gap-2"
+                        title={reports.some(r => r.incident === incident.id) ? "Imprimer le rapport" : "Vérifier et imprimer le rapport"}
+                      >
+                        <Printer className="h-4 w-4" />
+                        <span className="hidden sm:inline">Imprimer Rapport</span>
+                      </Button>
+                    )}
+                    {canModifyIncident(incident) && onEdit && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => handleEditClick(incident)}
+                        className="flex items-center gap-2"
+                      >
+                        <Edit className="h-4 w-4" />
+                        <span className="hidden sm:inline">Modifier</span>
+                      </Button>
+                    )}
+                    {!showReportButton && canModifyIncident(incident) && onDelete && (
                       <Button
                         variant="outline"
                         size="sm"

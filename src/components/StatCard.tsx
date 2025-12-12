@@ -1,4 +1,7 @@
+// Third-party imports
 import { LucideIcon } from "lucide-react";
+
+// UI component imports
 import { Card, CardContent } from "@/components/ui/card";
 
 interface StatCardProps {

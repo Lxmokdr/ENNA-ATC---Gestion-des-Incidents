@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { useEquipment } from "@/hooks/useEquipment";
+import { usePermissions } from "@/hooks/usePermissions";
 import type { Equipment } from "@/services/api";
 import { toast } from "sonner";
 import { Button } from "@/components/ui/button";
@@ -99,6 +100,7 @@ interface EquipmentFormData {
 
 export default function Equipment() {
   const { equipment, loading, addEquipment, updateEquipment, deleteEquipment, refreshEquipment } = useEquipment();
+  const permissions = usePermissions();
   const [isEditing, setIsEditing] = useState<number | null>(null);
   const [formData, setFormData] = useState<EquipmentFormData>({
     num_serie: "",
@@ -188,14 +190,15 @@ export default function Equipment() {
         </p>
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>
-            {isEditing ? "Modifier l'équipement" : "Nouvel équipement"}
-          </CardTitle>
-        </CardHeader>
-        <CardContent>
-          <form onSubmit={handleSubmit} className="space-y-4">
+      {permissions.canModifyEquipment && (
+        <Card>
+          <CardHeader>
+            <CardTitle>
+              {isEditing ? "Modifier l'équipement" : "Nouvel équipement"}
+            </CardTitle>
+          </CardHeader>
+          <CardContent>
+            <form onSubmit={handleSubmit} className="space-y-4">
             <div className="space-y-2">
               <Label htmlFor="nom_equipement">Nom de l'équipement *</Label>
               <Select
@@ -283,9 +286,19 @@ export default function Equipment() {
                 </Button>
               )}
             </div>
-          </form>
-        </CardContent>
-      </Card>
+            </form>
+          </CardContent>
+        </Card>
+      )}
+      {!permissions.canModifyEquipment && (
+        <Card>
+          <CardContent className="py-8">
+            <div className="text-center text-muted-foreground">
+              Accès en lecture seule. Vous ne pouvez pas créer ou modifier des équipements.
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="space-y-4">
         <h2 className="text-2xl font-semibold text-foreground">
@@ -336,28 +349,32 @@ export default function Equipment() {
                             >
                               <History className="h-4 w-4" />
                             </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => {
-                                setIsEditing(item.id);
-                                setFormData({
-                                  num_serie: item.num_serie || "",
-                                  nom_equipement: item.nom_equipement,
-                                  partition: item.partition,
-                                  etat: "actuel",
-                                });
-                              }}
-                            >
-                              <Edit className="h-4 w-4" />
-                            </Button>
-                            <Button
-                              variant="ghost"
-                              size="sm"
-                              onClick={() => handleDelete(item.id)}
-                            >
-                              <Trash2 className="h-4 w-4 text-destructive" />
-                            </Button>
+                            {permissions.canModifyEquipment && (
+                              <>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => {
+                                    setIsEditing(item.id);
+                                    setFormData({
+                                      num_serie: item.num_serie || "",
+                                      nom_equipement: item.nom_equipement,
+                                      partition: item.partition,
+                                      etat: "actuel",
+                                    });
+                                  }}
+                                >
+                                  <Edit className="h-4 w-4" />
+                                </Button>
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleDelete(item.id)}
+                                >
+                                  <Trash2 className="h-4 w-4 text-destructive" />
+                                </Button>
+                              </>
+                            )}
                           </div>
                         </TableCell>
                       </TableRow>

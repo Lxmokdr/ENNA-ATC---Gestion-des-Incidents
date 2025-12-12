@@ -11,13 +11,13 @@ class Command(BaseCommand):
     def handle(self, *args, **options):
         default_password = '01010101'
         users = [
-            {'username': 'admin', 'role': 'superuser'},
-            {'username': 'technicien1', 'role': 'technicien'},
-            {'username': 'technicien2', 'role': 'technicien'},
-            {'username': 'ingenieur1', 'role': 'ingenieur'},
-            {'username': 'ingenieur2', 'role': 'ingenieur'},
-            {'username': 'chefdep1', 'role': 'chefdep'},
-            {'username': 'superuser1', 'role': 'superuser'},
+            {'username': 'admin', 'role': 'superadmin'},
+            {'username': 'technicien1', 'role': 'service_maintenance'},
+            {'username': 'technicien2', 'role': 'service_maintenance'},
+            {'username': 'ingenieur1', 'role': 'service_integration'},
+            {'username': 'ingenieur2', 'role': 'service_integration'},
+            {'username': 'chefdep1', 'role': 'chef_departement'},
+            {'username': 'superuser1', 'role': 'superadmin'},
         ]
         
         created_count = 0
@@ -29,8 +29,8 @@ class Command(BaseCommand):
                     username=user_data['username'],
                     defaults={
                         'role': user_data['role'],
-                        'is_staff': user_data['role'] == 'superuser',
-                        'is_superuser': user_data['role'] == 'superuser',
+                        'is_staff': user_data['role'] == 'superadmin',
+                        'is_superuser': user_data['role'] == 'superadmin',
                     }
                 )
                 if created:

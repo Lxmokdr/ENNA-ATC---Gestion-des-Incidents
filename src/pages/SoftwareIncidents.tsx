@@ -1,34 +1,21 @@
-import { useNavigate } from "react-router-dom";
 import { IncidentForm, IncidentFormData } from "@/components/IncidentForm";
-import { IncidentTable } from "@/components/IncidentTable";
 import { useIncidents } from "@/hooks/useIncidents";
+import { usePermissions } from "@/hooks/usePermissions";
 import { toast } from "sonner";
 
 export default function SoftwareIncidents() {
-  const navigate = useNavigate();
-  const { softwareIncidents, addSoftwareIncident, deleteSoftwareIncident, reports } = useIncidents();
+  const {  addSoftwareIncident } = useIncidents();
+  const permissions = usePermissions();
 
   const handleSubmit = async (data: IncidentFormData) => {
     try {
       await addSoftwareIncident(data);
       toast.success("Incident logiciel ajouté avec succès");
     } catch (error: any) {
-      toast.error(error.message || "Erreur lors de l'ajout de l'incident");
+      toast.error(error.message || "Erreur lors de l'ajout de l'incident"); 
     }
   };
 
-  const handleEdit = (id: number) => {
-    navigate(`/incident/edit/${id}`);
-  };
-
-  const handleDelete = (id: number) => {
-    deleteSoftwareIncident(id);
-    toast.success("Incident supprimé");
-  };
-
-  const handleAddReport = (id: number) => {
-    navigate(`/software/report/${id}`);
-  };
 
   return (
     <div className="space-y-6">
@@ -41,25 +28,18 @@ export default function SoftwareIncidents() {
         </p>
       </div>
 
-      <IncidentForm
-        onSubmit={handleSubmit}
-        type="software"
-        title="Nouveau incident software"
-      />
-
-      <div className="space-y-4">
-        <h2 className="text-2xl font-semibold text-foreground">
-          Historique des incidents software
-        </h2>
-        <IncidentTable
-          incidents={softwareIncidents}
-          onEdit={handleEdit}
-          onDelete={handleDelete}
-          onAddReport={handleAddReport}
-          showReportButton
-          reports={reports}
+      {permissions.canModifySoftwareIncidents && (
+        <IncidentForm
+          onSubmit={handleSubmit}
+          type="software"
+          title="Nouveau incident software"
         />
-      </div>
+      )}
+      {!permissions.canModifySoftwareIncidents && (
+        <div className="text-center py-8 text-muted-foreground">
+          Accès en lecture seule. Vous ne pouvez pas créer de nouveaux incidents logiciels.
+        </div>
+      )}
     </div>
   );
 }

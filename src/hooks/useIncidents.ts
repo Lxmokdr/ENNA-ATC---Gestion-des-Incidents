@@ -2,9 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { apiClient, Incident, Report, IncidentStats } from "@/services/api";
 import { IncidentFormData } from "@/components/IncidentForm";
 import { useAuth } from "@/hooks/useAuth";
+import { usePermissions } from "@/hooks/usePermissions";
 
 export function useIncidents() {
   const { isAuthenticated, loading: authLoading } = useAuth();
+  const permissions = usePermissions();
   const [hardwareIncidents, setHardwareIncidents] = useState<Incident[]>([]);
   const [softwareIncidents, setSoftwareIncidents] = useState<Incident[]>([]);
   const [reports, setReports] = useState<Report[]>([]);
@@ -30,19 +32,55 @@ export function useIncidents() {
       setLoading(true);
       setError(null);
 
-      const [hardwareResponse, softwareResponse] = await Promise.all([
-        apiClient.getIncidents({ type: 'hardware' }).catch(err => {
-          console.error("Error loading hardware incidents:", err);
-          return { results: [], count: 0 };
-        }),
-        apiClient.getIncidents({ type: 'software' }).catch(err => {
-          console.error("Error loading software incidents:", err);
-          return { results: [], count: 0 };
-        })
-      ]);
+      // Only load incidents that the user has permission to access
+      const loadPromises: Promise<any>[] = [];
 
-      setHardwareIncidents(hardwareResponse.results || []);
-      setSoftwareIncidents(softwareResponse.results || []);
+      if (permissions.canAccessHardwareIncidents) {
+        loadPromises.push(
+          apiClient.getIncidents({ type: 'hardware' }).catch(err => {
+            // If 403, user doesn't have access - return empty
+            if (err.status === 403) {
+              return { results: [], count: 0 };
+            }
+            console.error("Error loading hardware incidents:", err);
+            return { results: [], count: 0 };
+          })
+        );
+      } else {
+        // User doesn't have access, set empty array
+        setHardwareIncidents([]);
+      }
+
+      if (permissions.canAccessSoftwareIncidents) {
+        loadPromises.push(
+          apiClient.getIncidents({ type: 'software' }).catch(err => {
+            // If 403, user doesn't have access - return empty
+            if (err.status === 403) {
+              return { results: [], count: 0 };
+            }
+            console.error("Error loading software incidents:", err);
+            return { results: [], count: 0 };
+          })
+        );
+      } else {
+        // User doesn't have access, set empty array
+        setSoftwareIncidents([]);
+      }
+
+      // Only await if there are promises to wait for
+      if (loadPromises.length > 0) {
+        const responses = await Promise.all(loadPromises);
+        
+        // Set results based on what was loaded
+        let responseIndex = 0;
+        if (permissions.canAccessHardwareIncidents) {
+          setHardwareIncidents(responses[responseIndex]?.results || []);
+          responseIndex++;
+        }
+        if (permissions.canAccessSoftwareIncidents) {
+          setSoftwareIncidents(responses[responseIndex]?.results || []);
+        }
+      }
     } catch (err: any) {
       setError(err.message || "Erreur lors du chargement des incidents");
       console.error("Error loading incidents:", err);
@@ -100,6 +138,7 @@ export function useIncidents() {
         etat_de_equipement_apres_intervention: data.etat_de_equipement_apres_intervention,
         recommendation: data.recommendation,
         duree_arret: data.duree_arret,
+        maintenance_type: data.maintenance_type || undefined,
       };
 
       const newIncident = await apiClient.createIncident(incidentData);
@@ -136,16 +175,11 @@ export function useIncidents() {
         simulateur: Boolean(data.simulateur),
         salle_operationnelle: Boolean(data.salle_operationnelle),
         server: data.server || undefined,
-        game: data.game || undefined,
         partition: data.partition || undefined,
-        group: data.group || undefined,
-        exercice: data.exercice || undefined,
-        secteur: data.secteur || undefined,
         position_STA: data.position_STA || undefined,
-        position_logique: data.position_logique || undefined,
         type_d_anomalie: data.type_d_anomalie || undefined,
         indicatif: data.indicatif || undefined,
-        mode_radar: data.mode_radar || undefined,
+        nom_radar: data.nom_radar || undefined,
         FL: data.FL || undefined,
         longitude: data.longitude || undefined,
         latitude: data.latitude || undefined,
@@ -192,6 +226,7 @@ export function useIncidents() {
         etat_de_equipement_apres_intervention: data.etat_de_equipement_apres_intervention,
         recommendation: data.recommendation,
         duree_arret: data.duree_arret,
+        maintenance_type: data.maintenance_type || undefined,
       };
 
       const updatedIncident = await apiClient.updateIncident(id, incidentData);
@@ -212,16 +247,11 @@ export function useIncidents() {
         simulateur: data.simulateur,
         salle_operationnelle: data.salle_operationnelle,
         server: data.server,
-        game: data.game,
         partition: data.partition,
-        group: data.group,
-        exercice: data.exercice,
-        secteur: data.secteur,
         position_STA: data.position_STA,
-        position_logique: data.position_logique,
         type_d_anomalie: data.type_d_anomalie,
         indicatif: data.indicatif,
-        mode_radar: data.mode_radar,
+        nom_radar: data.nom_radar,
         FL: data.FL,
         longitude: data.longitude,
         latitude: data.latitude,

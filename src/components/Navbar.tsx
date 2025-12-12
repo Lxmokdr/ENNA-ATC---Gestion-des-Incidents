@@ -1,7 +1,12 @@
-import { User, Bell, LogOut } from "lucide-react";
-import { Button } from "@/components/ui/button";
-import { useAuth } from "@/hooks/useAuth";
+// Third-party imports
+import { User, LogOut } from "lucide-react";
 import { toast } from "sonner";
+
+// Local hook imports
+import { useAuth } from "@/hooks/useAuth";
+
+// UI component imports
+import { Button } from "@/components/ui/button";
 
 export function Navbar() {
   const { user, logout } = useAuth();
@@ -21,7 +26,6 @@ export function Navbar() {
         </div>
 
         <div className="flex items-center gap-3">
-          
           <div className="flex items-center gap-2 rounded-lg bg-muted px-3 py-2">
             <User className="h-5 w-5 text-muted-foreground" />
             <span className="text-sm font-medium">

@@ -6,8 +6,11 @@ const API_BASE_URL = 'http://localhost:8000/api';
 export interface User {
   id: number;
   username: string;
-  role: 'technicien' | 'ingenieur' | 'chefdep' | 'superuser';
+  role: 'service_maintenance' | 'service_integration' | 'chef_departement' | 'superadmin';
   created_at: string;
+  is_active?: boolean;
+  is_staff?: boolean;
+  is_superuser?: boolean;
 }
 
 export interface Incident {
@@ -33,19 +36,15 @@ export interface Incident {
   etat_de_equipement_apres_intervention?: string;
   recommendation?: string;
   duree_arret?: number;
+  maintenance_type?: 'preventive' | 'corrective';
   // Software fields
   simulateur?: boolean;
   salle_operationnelle?: boolean;
   server?: string;
-  game?: string;
-  group?: string;
-  exercice?: string;
-  secteur?: string;
   position_STA?: string;
-  position_logique?: string;
   type_d_anomalie?: string;
   indicatif?: string;
-  mode_radar?: string;
+  nom_radar?: string;
   FL?: string;
   longitude?: string;
   latitude?: string;
@@ -86,6 +85,7 @@ export interface LoginRequest {
 
 export interface LoginResponse {
   token: string;
+  refresh_token?: string;
   user: User;
   message: string;
 }
@@ -102,16 +102,24 @@ export interface IncidentStats {
   hardware_last_30_days?: number;
   software_last_7_days?: number;
   software_last_30_days?: number;
+  maintenance_preventive_count?: number;
+  maintenance_corrective_count?: number;
 }
 
+// ============================================================================
 // API Client
+// ============================================================================
+
 class ApiClient {
   private baseURL: string;
   private token: string | null = null;
+  private refreshTokenValue: string | null = null;
+  private refreshPromise: Promise<string> | null = null;
 
   constructor(baseURL: string) {
     this.baseURL = baseURL;
     this.token = localStorage.getItem('enna_token');
+    this.refreshTokenValue = localStorage.getItem('enna_refresh_token');
   }
 
   setToken(token: string | null) {
@@ -120,6 +128,15 @@ class ApiClient {
       localStorage.setItem('enna_token', token);
     } else {
       localStorage.removeItem('enna_token');
+    }
+  }
+
+  setRefreshToken(refreshToken: string | null) {
+    this.refreshTokenValue = refreshToken;
+    if (refreshToken) {
+      localStorage.setItem('enna_refresh_token', refreshToken);
+    } else {
+      localStorage.removeItem('enna_refresh_token');
     }
   }
 
@@ -145,43 +162,83 @@ class ApiClient {
       headers['Authorization'] = `Bearer ${tokenToUse}`;
     }
 
-    const response = await fetch(url, {
-      ...options,
-      headers,
-    });
+    try {
+      const response = await fetch(url, {
+        ...options,
+        headers,
+      });
 
-    if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      // Handle different error formats
-      let errorMessage = errorData.message || errorData.detail;
-      if (errorData.non_field_errors && Array.isArray(errorData.non_field_errors)) {
-        errorMessage = errorData.non_field_errors[0];
-      }
-      // If there are validation errors, include them in the message
-      if (errorData.errors && typeof errorData.errors === 'object') {
-        const errorMessages = Object.entries(errorData.errors)
-          .map(([field, messages]: [string, any]) => {
-            const msg = Array.isArray(messages) ? messages.join(', ') : String(messages);
-            return `${field}: ${msg}`;
-          })
-          .join('; ');
-        if (errorMessages) {
-          errorMessage = errorMessage ? `${errorMessage} (${errorMessages})` : errorMessages;
+      if (!response.ok) {
+        // Handle 401 Unauthorized - try to refresh token
+        if (response.status === 401 && this.refreshTokenValue && endpoint !== '/auth/refresh/') {
+          try {
+            const newToken = await this.refreshToken();
+            // Retry the original request with new token
+            headers['Authorization'] = `Bearer ${newToken}`;
+            const retryResponse = await fetch(url, {
+              ...options,
+              headers,
+            });
+            if (retryResponse.ok) {
+              return retryResponse.json();
+            }
+          } catch (refreshError) {
+            // Refresh failed, clear tokens and throw original error
+            this.setToken(null);
+            this.setRefreshToken(null);
+            localStorage.removeItem('enna_user');
+          }
         }
+        
+        const errorData = await response.json().catch(() => ({}));
+        // Handle different error formats
+        let errorMessage = errorData.error || errorData.message || errorData.detail;
+        if (errorData.non_field_errors && Array.isArray(errorData.non_field_errors)) {
+          errorMessage = errorData.non_field_errors[0];
+        }
+        // If there are validation errors, include them in the message
+        if (errorData.errors && typeof errorData.errors === 'object') {
+          const errorMessages = Object.entries(errorData.errors)
+            .map(([field, messages]: [string, any]) => {
+              const msg = Array.isArray(messages) ? messages.join(', ') : String(messages);
+              return `${field}: ${msg}`;
+            })
+            .join('; ');
+          if (errorMessages) {
+            errorMessage = errorMessage ? `${errorMessage} (${errorMessages})` : errorMessages;
+          }
+        }
+        if (!errorMessage) {
+          errorMessage = `HTTP error! status: ${response.status}`;
+        }
+        const error = new Error(errorMessage);
+        (error as any).status = response.status;
+        (error as any).data = errorData;
+        (error as any).locked = errorData.locked || false;
+        (error as any).locked_until = errorData.locked_until;
+        throw error;
       }
-      if (!errorMessage) {
-        errorMessage = `HTTP error! status: ${response.status}`;
+
+      return response.json();
+    } catch (error: any) {
+      // Handle network errors (Failed to fetch, CORS, etc.)
+      if (error.name === 'TypeError' && error.message.includes('fetch')) {
+        const networkError = new Error(
+          `Impossible de se connecter au serveur. Vérifiez que le backend est démarré sur ${this.baseURL.replace('/api', '')}`
+        );
+        (networkError as any).status = 0;
+        (networkError as any).isNetworkError = true;
+        throw networkError;
       }
-      const error = new Error(errorMessage);
-      (error as any).status = response.status;
-      (error as any).data = errorData;
+      // Re-throw other errors
       throw error;
     }
-
-    return response.json();
   }
 
-  // Authentication
+  // ========================================================================
+  // Authentication Methods
+  // ========================================================================
+  
   async login(credentials: LoginRequest): Promise<LoginResponse> {
     const response = await this.request<LoginResponse>('/auth/login/', {
       method: 'POST',
@@ -190,21 +247,71 @@ class ApiClient {
     
     this.token = response.token;
     this.setToken(response.token);
+    if (response.refresh_token) {
+      this.setRefreshToken(response.refresh_token);
+    }
     localStorage.setItem('enna_token', response.token);
     localStorage.setItem('enna_user', JSON.stringify(response.user));
     
     return response;
   }
 
+  async refreshToken(): Promise<string> {
+    // Prevent multiple simultaneous refresh requests
+    if (this.refreshPromise) {
+      return this.refreshPromise;
+    }
+
+    if (!this.refreshTokenValue) {
+      const storedRefresh = localStorage.getItem('enna_refresh_token');
+      if (!storedRefresh) {
+        throw new Error('No refresh token available');
+      }
+      this.refreshTokenValue = storedRefresh;
+    }
+
+    this.refreshPromise = (async () => {
+      try {
+        const response = await fetch(`${this.baseURL}/auth/refresh/`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+          },
+          body: JSON.stringify({ refresh_token: this.refreshTokenValue }),
+        });
+
+        if (!response.ok) {
+          throw new Error('Token refresh failed');
+        }
+
+        const data = await response.json();
+        this.token = data.token;
+        this.setToken(data.token);
+        if (data.refresh_token) {
+          this.setRefreshToken(data.refresh_token);
+        }
+        return data.token;
+      } finally {
+        this.refreshPromise = null;
+      }
+    })();
+
+    return this.refreshPromise;
+  }
+
   async logout(): Promise<void> {
     try {
+      const refreshToken = localStorage.getItem('enna_refresh_token');
       await this.request('/auth/logout/', {
         method: 'POST',
+        body: JSON.stringify({ refresh_token: refreshToken }),
       });
     } finally {
       this.token = null;
       this.setToken(null);
+      this.setRefreshToken(null);
       localStorage.removeItem('enna_token');
+      localStorage.removeItem('enna_refresh_token');
       localStorage.removeItem('enna_user');
     }
   }
@@ -231,7 +338,10 @@ class ApiClient {
     });
   }
 
-  // Incidents
+  // ========================================================================
+  // Incident Methods
+  // ========================================================================
+  
   async getIncidents(params?: {
     type?: 'hardware' | 'software';
   }): Promise<{ results: Incident[]; count: number }> {
@@ -281,7 +391,10 @@ class ApiClient {
     return this.request<Incident[]>('/incidents/recent/');
   }
 
-  // Reports
+  // ========================================================================
+  // Report Methods
+  // ========================================================================
+  
   async getReports(params?: { incident?: number }): Promise<{ results: Report[]; count: number }> {
     const searchParams = new URLSearchParams();
     if (params?.incident) searchParams.set('incident', params.incident.toString());
@@ -316,7 +429,10 @@ class ApiClient {
     });
   }
 
-  // Equipment
+  // ========================================================================
+  // Equipment Methods
+  // ========================================================================
+  
   async getEquipment(params?: { num_serie?: string; search_serie?: string }): Promise<{ results: Equipment[]; count: number } | Equipment | { results: string[]; count: number }> {
     const searchParams = new URLSearchParams();
     if (params?.num_serie) searchParams.set('num_serie', params.num_serie);
@@ -354,6 +470,38 @@ class ApiClient {
 
   async getEquipmentHistory(id: number): Promise<{ equipment: Equipment; incidents: Incident[]; count: number }> {
     return this.request<{ equipment: Equipment; incidents: Incident[]; count: number }>(`/equipement/${id}/history/`);
+  }
+
+  // ========================================================================
+  // User Management Methods (superadmin only)
+  // ========================================================================
+  
+  async getUsers(): Promise<{ results: User[]; count: number }> {
+    return this.request<{ results: User[]; count: number }>('/users/');
+  }
+
+  async getUser(id: number): Promise<User> {
+    return this.request<User>(`/users/${id}/`);
+  }
+
+  async createUser(userData: Omit<User, 'id' | 'created_at'> & { password: string }): Promise<User> {
+    return this.request<User>('/users/', {
+      method: 'POST',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async updateUser(id: number, userData: Partial<User> & { password?: string }): Promise<User> {
+    return this.request<User>(`/users/${id}/`, {
+      method: 'PUT',
+      body: JSON.stringify(userData),
+    });
+  }
+
+  async deleteUser(id: number): Promise<void> {
+    await this.request(`/users/${id}/`, {
+      method: 'DELETE',
+    });
   }
 }
 

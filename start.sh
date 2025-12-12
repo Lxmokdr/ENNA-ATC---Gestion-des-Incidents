@@ -86,31 +86,89 @@ kill_port 8080  # Frontend
 
 # Start Django Backend
 echo -e "${BLUE}🔧 Starting Django Backend Server...${NC}"
-cd backend
 
-# Determine Python command
-if [ -d "venv" ]; then
-    source venv/bin/activate
-    PYTHON_CMD=python
+# Load environment variables from .env BEFORE changing directory
+if [ -f "backend/.env" ]; then
+    # Source the .env file properly (handle comments and empty lines)
+    set -a
+    source <(grep -v '^#' backend/.env | grep -v '^$' | sed 's/^/export /')
+    set +a
+fi
+
+# Check database authentication method
+DB_PASSWORD=${DB_PASSWORD:-}
+# Check if password is empty, default, or just whitespace
+if [ -z "$DB_PASSWORD" ] || [ "$DB_PASSWORD" = "enna_password" ] || [ -z "${DB_PASSWORD// }" ]; then
+    # Using peer authentication - try to run as postgres user
+    echo -e "${YELLOW}⚠️  Database password not configured. Attempting peer authentication...${NC}"
+    echo -e "${YELLOW}   This requires sudo access.${NC}"
+    
+    # Change to backend directory first
+    cd backend
+    
+    # Determine Python command
+    if [ -d "venv" ]; then
+        PYTHON_CMD="$(pwd)/venv/bin/python"
+    else
+        PYTHON_CMD=python3
+    fi
+    
+    # Check if Django is set up
+    if [ ! -f "manage.py" ]; then
+        echo -e "${YELLOW}🔄 Django backend not set up, running setup...${NC}"
+        bash setup_django.sh
+    fi
+    
+    # Try to run with sudo (test if passwordless sudo works for postgres user)
+    if sudo -n -u postgres true 2>/dev/null; then
+        # Passwordless sudo available
+        echo -e "${GREEN}✅ Using passwordless sudo for peer authentication${NC}"
+        # Use absolute path and ensure PATH is set correctly
+        sudo -E -u postgres env PATH="$PATH" "$PYTHON_CMD" manage.py runserver 8000 &
+        BACKEND_PID=$!
+    else
+        # Try running anyway - might work with passwordless sudo configured
+        echo -e "${YELLOW}⚠️  Attempting to use sudo (passwordless sudo may be configured)...${NC}"
+        sudo -E -u postgres env PATH="$PATH" "$PYTHON_CMD" manage.py runserver 8000 &
+        BACKEND_PID=$!
+        # Give it a moment to see if it starts
+        sleep 2
+        if ! kill -0 $BACKEND_PID 2>/dev/null; then
+            echo -e "${RED}❌ Sudo failed. Please configure passwordless sudo:${NC}"
+            echo -e "${YELLOW}   echo \"$USER ALL=(postgres) NOPASSWD: ALL\" | sudo tee /etc/sudoers.d/postgres-enna${NC}"
+            echo ""
+            echo -e "${YELLOW}Or set up password authentication:${NC}"
+            echo -e "${GREEN}   cd backend && sudo ./setup_db_password.sh${NC}"
+            cd ..
+            exit 1
+        fi
+    fi
+    cd ..
 else
-    PYTHON_CMD=python3
+    # Using password authentication, run as current user
+    echo -e "${GREEN}✅ Using password authentication${NC}"
+    cd backend
+    
+    # Determine Python command
+    if [ -d "venv" ]; then
+        PYTHON_CMD="$(pwd)/venv/bin/python"
+    else
+        PYTHON_CMD=python3
+    fi
+    
+    # Check if Django is set up
+    if [ ! -f "manage.py" ]; then
+        echo -e "${YELLOW}🔄 Django backend not set up, running setup...${NC}"
+        bash setup_django.sh
+    fi
+    
+    # Export environment variables for Django
+    export DB_PASSWORD DB_USER DB_NAME DB_HOST DB_PORT
+    
+    $PYTHON_CMD manage.py runserver 8000 &
+    BACKEND_PID=$!
+    cd ..
 fi
-
-# Check if Django is set up
-if [ ! -f "manage.py" ]; then
-    echo -e "${YELLOW}🔄 Django backend not set up, running setup...${NC}"
-    bash setup_django.sh
-fi
-
-# Activate venv if it exists
-if [ -d "venv" ]; then
-    source venv/bin/activate
-    PYTHON_CMD=python
-fi
-
-$PYTHON_CMD manage.py runserver 8000 &
-BACKEND_PID=$!
-cd ..
 
 # Wait for backend to start
 echo -e "${YELLOW}⏳ Waiting for backend to start...${NC}"

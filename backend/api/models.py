@@ -1,22 +1,55 @@
 from django.db import models
 from django.contrib.auth.models import AbstractUser
 from django.utils import timezone
+from datetime import timedelta
 
 
 class User(AbstractUser):
     """Custom user model with role field"""
     ROLE_CHOICES = [
-        ('technicien', 'Technicien'),
-        ('ingenieur', 'Ingénieur'),
-        ('chefdep', 'Chef de Département'),
-        ('superuser', 'Super Utilisateur'),
+        ('service_maintenance', 'Service Maintenance'),
+        ('service_integration', 'Service Integration et Développement'),
+        ('chef_departement', 'Chef de Département'),
+        ('superadmin', 'Super Admin'),
     ]
     
-    role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='technicien')
+    role = models.CharField(max_length=30, choices=ROLE_CHOICES, default='service_maintenance')
     created_at = models.DateTimeField(default=timezone.now)
+    failed_login_attempts = models.IntegerField(default=0)
+    locked_until = models.DateTimeField(null=True, blank=True)
     
     class Meta:
         db_table = 'users'
+    
+    def is_locked(self):
+        """Check if account is currently locked"""
+        if not hasattr(self, 'locked_until') or self.locked_until is None:
+            return False
+        if timezone.now() < self.locked_until:
+            return True
+        # Unlock if lock period has passed
+        self.locked_until = None
+        self.failed_login_attempts = 0
+        self.save(update_fields=['locked_until', 'failed_login_attempts'])
+        return False
+    
+    def lock_account(self, duration_minutes=15):
+        """Lock account for specified duration"""
+        self.locked_until = timezone.now() + timedelta(minutes=duration_minutes)
+        self.save(update_fields=['locked_until'])
+    
+    def reset_login_attempts(self):
+        """Reset failed login attempts"""
+        self.failed_login_attempts = 0
+        self.locked_until = None
+        self.save(update_fields=['failed_login_attempts', 'locked_until'])
+    
+    def increment_failed_attempts(self):
+        """Increment failed login attempts and lock if threshold reached"""
+        self.failed_login_attempts += 1
+        if self.failed_login_attempts >= 5:
+            self.lock_account(15)
+        self.save(update_fields=['failed_login_attempts', 'locked_until'])
 
 
 class Equipement(models.Model):
@@ -35,6 +68,11 @@ class Equipement(models.Model):
 
 class HardwareIncident(models.Model):
     """Hardware incident model"""
+    MAINTENANCE_TYPE_CHOICES = [
+        ('preventive', 'Préventive'),
+        ('corrective', 'Corrective'),
+    ]
+    
     date = models.DateField()
     time = models.TimeField()
     nom_de_equipement = models.CharField(max_length=255)
@@ -48,6 +86,7 @@ class HardwareIncident(models.Model):
     etat_de_equipement_apres_intervention = models.TextField(null=True, blank=True)
     recommendation = models.TextField(null=True, blank=True)
     duree_arret = models.IntegerField(null=True, blank=True)
+    maintenance_type = models.CharField(max_length=20, choices=MAINTENANCE_TYPE_CHOICES, null=True, blank=True)
     created_at = models.DateTimeField(default=timezone.now)
     updated_at = models.DateTimeField(auto_now=True)
     
@@ -63,16 +102,11 @@ class SoftwareIncident(models.Model):
     simulateur = models.BooleanField(default=False)
     salle_operationnelle = models.BooleanField(default=False)
     server = models.CharField(max_length=255, null=True, blank=True)
-    game = models.CharField(max_length=255, null=True, blank=True)
     partition = models.CharField(max_length=255, null=True, blank=True)
-    group = models.CharField(max_length=255, null=True, blank=True)
-    exercice = models.CharField(max_length=255, null=True, blank=True)
-    secteur = models.CharField(max_length=255, null=True, blank=True)
     position_STA = models.CharField(max_length=255, null=True, blank=True)
-    position_logique = models.CharField(max_length=255, null=True, blank=True)
     type_d_anomalie = models.CharField(max_length=255, null=True, blank=True)
     indicatif = models.CharField(max_length=255, null=True, blank=True)
-    mode_radar = models.CharField(max_length=255, null=True, blank=True)
+    nom_radar = models.CharField(max_length=255, null=True, blank=True)
     FL = models.CharField(max_length=255, null=True, blank=True)
     longitude = models.CharField(max_length=255, null=True, blank=True)
     latitude = models.CharField(max_length=255, null=True, blank=True)

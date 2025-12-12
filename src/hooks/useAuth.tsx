@@ -32,12 +32,32 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
           try {
             await apiClient.getProfile();
           } catch (err: any) {
-            // Token is invalid or expired, clear auth data
-            console.log("Token validation failed, clearing auth:", err.message);
-            localStorage.removeItem("enna_user");
-            localStorage.removeItem("enna_token");
-            apiClient.setToken(null);
-            setUser(null);
+            // Token might be expired, try to refresh
+            if (err.status === 401) {
+              try {
+                await apiClient.refreshToken();
+                // Retry profile fetch
+                await apiClient.getProfile();
+              } catch (refreshErr: any) {
+                // Refresh failed, clear auth data
+                console.error("Token refresh failed, clearing auth:", refreshErr.message);
+                localStorage.removeItem("enna_user");
+                localStorage.removeItem("enna_token");
+                localStorage.removeItem("enna_refresh_token");
+                apiClient.setToken(null);
+                apiClient.setRefreshToken(null);
+                setUser(null);
+              }
+            } else {
+              // Other error, clear auth data
+              console.error("Token validation failed, clearing auth:", err.message);
+              localStorage.removeItem("enna_user");
+              localStorage.removeItem("enna_token");
+              localStorage.removeItem("enna_refresh_token");
+              apiClient.setToken(null);
+              apiClient.setRefreshToken(null);
+              setUser(null);
+            }
           }
         }
       } catch (err) {
@@ -59,7 +79,18 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
       const response = await apiClient.login({ username, password });
       setUser(response.user);
     } catch (err: any) {
-      setError(err.message || "Erreur de connexion");
+      // Handle account lockout
+      if (err.status === 423 || err.locked) {
+        const lockedMessage = err.locked_until 
+          ? `Compte verrouillé. Réessayez plus tard.`
+          : err.message || "Compte verrouillé après plusieurs tentatives échouées";
+        setError(lockedMessage);
+      } else if (err.status === 429) {
+        // Rate limiting
+        setError("Trop de tentatives. Veuillez patienter quelques minutes avant de réessayer.");
+      } else {
+        setError(err.message || "Erreur de connexion");
+      }
       throw err;
     } finally {
       setLoading(false);
@@ -74,6 +105,9 @@ export function AuthProvider({ children }: { children: ReactNode }): JSX.Element
     } finally {
       setUser(null);
       setError(null);
+      localStorage.removeItem("enna_user");
+      localStorage.removeItem("enna_token");
+      localStorage.removeItem("enna_refresh_token");
     }
   };
 

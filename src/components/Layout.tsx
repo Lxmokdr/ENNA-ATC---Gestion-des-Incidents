@@ -1,6 +1,9 @@
+// React imports
 import { ReactNode } from "react";
-import { Sidebar } from "./Sidebar";
+
+// Local component imports
 import { Navbar } from "./Navbar";
+import { Sidebar } from "./Sidebar";
 
 interface LayoutProps {
   children: ReactNode;

@@ -1,5 +1,8 @@
+# Django imports
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
+
+# Local imports
 from .models import User, HardwareIncident, SoftwareIncident, Report, Equipement
 
 
