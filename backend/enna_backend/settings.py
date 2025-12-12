@@ -15,7 +15,19 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/5.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-enna-secret-key-change-in-production')
+# Priority: 1) Environment variable (Render sets via generateValue: true)
+#           2) Config from .env file
+#           3) Default (only for local development)
+SECRET_KEY = os.environ.get('SECRET_KEY') or config('SECRET_KEY', default='django-insecure-enna-secret-key-change-in-production')
+
+# Safety check: Warn if using default secret key in production
+if SECRET_KEY == 'django-insecure-enna-secret-key-change-in-production' and not DEBUG:
+    import warnings
+    warnings.warn(
+        'SECURITY WARNING: Using default SECRET_KEY in production! '
+        'Set SECRET_KEY environment variable or in .env file.',
+        RuntimeWarning
+    )
 
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = config('DEBUG', default=True, cast=bool)
@@ -81,9 +93,12 @@ WSGI_APPLICATION = 'enna_backend.wsgi.application'
 # PostgreSQL configuration
 # Check environment variables first (for Render/containerized environments)
 # Then fall back to config() which reads from .env file
+# Use os.environ.get() with None check to properly handle empty strings
 DB_NAME = os.environ.get('DB_NAME') or config('DB_NAME', default='enna_db')
 DB_USER = os.environ.get('DB_USER') or config('DB_USER', default='enna_user')
-DB_PASSWORD = os.environ.get('DB_PASSWORD') or config('DB_PASSWORD', default='enna_password', cast=str)
+# For password, check if it exists in environment (even if empty string)
+db_password_env = os.environ.get('DB_PASSWORD')
+DB_PASSWORD = db_password_env if db_password_env is not None else config('DB_PASSWORD', default='enna_password', cast=str)
 DB_HOST = os.environ.get('DB_HOST') or config('DB_HOST', default='localhost')
 DB_PORT = os.environ.get('DB_PORT') or config('DB_PORT', default='5432')
 
@@ -114,23 +129,51 @@ has_password = (
 # In local development, use Unix socket if no password is set
 if is_containerized:
     # Containerized environment - must use password authentication
-    # Double-check password from environment (Render sets it via fromDatabase)
-    final_password = os.environ.get('DB_PASSWORD', '') or DB_PASSWORD
+    # Render sets DB_PASSWORD via fromDatabase in render.yaml
+    # Always use environment variables directly in containerized environments
+    final_password = os.environ.get('DB_PASSWORD', '')
+    final_host = os.environ.get('DB_HOST', '')
+    final_user = os.environ.get('DB_USER', '')
+    final_name = os.environ.get('DB_NAME', '')
+    final_port = os.environ.get('DB_PORT', '5432')
+    
+    # Fallback to config values if environment variables are not set
+    # (This should not happen in Render, but provides safety)
+    if not final_password:
+        final_password = DB_PASSWORD
+    if not final_host:
+        final_host = db_host
+    if not final_user:
+        final_user = DB_USER
+    if not final_name:
+        final_name = DB_NAME
+    
+    # If password is still not set or is default, raise error with helpful message
     if not final_password or final_password.strip() == '' or final_password == 'enna_password':
+        # Provide detailed error for debugging
+        env_vars = {
+            'DB_PASSWORD': 'SET' if os.environ.get('DB_PASSWORD') else 'NOT SET',
+            'DB_HOST': os.environ.get('DB_HOST', 'NOT SET'),
+            'DB_USER': os.environ.get('DB_USER', 'NOT SET'),
+            'DB_NAME': os.environ.get('DB_NAME', 'NOT SET'),
+            'DB_PORT': os.environ.get('DB_PORT', 'NOT SET'),
+            'RENDER': os.environ.get('RENDER', 'NOT SET'),
+        }
         raise ValueError(
             f'DB_PASSWORD must be set in containerized environments. '
-            f'DB_HOST={db_host}, DB_USER={DB_USER}, DB_NAME={DB_NAME}, '
-            f'RENDER={os.environ.get("RENDER", "not set")}, '
-            f'DB_PASSWORD from env={bool(os.environ.get("DB_PASSWORD"))}'
+            f'Environment variables: {env_vars}. '
+            f'Please ensure the database service "enna-db" is linked to the web service in Render dashboard, '
+            f'or manually set DB_PASSWORD, DB_HOST, DB_USER, DB_NAME, DB_PORT environment variables.'
         )
+    
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
-            'NAME': DB_NAME,
-            'USER': DB_USER,
+            'NAME': final_name,
+            'USER': final_user,
             'PASSWORD': final_password,
-            'HOST': db_host,
-            'PORT': db_port,
+            'HOST': final_host,
+            'PORT': final_port,
             'OPTIONS': {
                 'connect_timeout': 10,
             },

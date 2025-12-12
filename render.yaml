@@ -42,3 +42,5 @@ databases:
     databaseName: enna_db
     user: enna_user
     plan: free
+    # Note: The database service ID is: dpg-d4u9587gi27c738kb790-a
+    # Render will automatically inject connection variables via fromDatabase above
