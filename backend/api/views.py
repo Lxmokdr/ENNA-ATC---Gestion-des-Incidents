@@ -3,6 +3,7 @@ from datetime import timedelta
 
 # Django imports
 from django.contrib.auth import authenticate, get_user_model
+from django.conf import settings
 from django.db.models import Q, Count, Sum, Avg, F
 from django.utils import timezone
 
@@ -75,6 +76,13 @@ def login(request):
             logger.error(f"Error in login pre-check: {e}")
             # Continue with login attempt
     
+    # Log request data for debugging (only in development)
+    import logging
+    logger = logging.getLogger(__name__)
+    if settings.DEBUG:
+        logger.debug(f"Login request data: {request.data}")
+        logger.debug(f"Login request content type: {request.content_type}")
+    
     serializer = LoginSerializer(data=request.data)
     if serializer.is_valid():
         user = serializer.validated_data['user']
@@ -108,41 +116,47 @@ def login(request):
             'message': 'Connexion réussie'
         })
     else:
-        # Increment failed login attempts if user exists
-        if username:
-            try:
-                user = User.objects.get(username=username)
+        # Serializer validation failed - return validation errors
+        # Check if it's an authentication error (invalid credentials)
+        # or a validation error (missing fields, etc.)
+        error_response = serializer.errors
+        
+        # If it's an authentication error (invalid credentials), increment failed attempts
+        if 'non_field_errors' in error_response or any('Identifiants invalides' in str(err) for err in error_response.values()):
+            if username:
                 try:
-                    if hasattr(user, 'increment_failed_attempts'):
-                        user.increment_failed_attempts()
-                        user.refresh_from_db()
-                        if hasattr(user, 'locked_until') and user.locked_until:
-                            if timezone.now() < user.locked_until:
-                                remaining_time = (user.locked_until - timezone.now()).total_seconds() / 60
-                                return Response(
-                                    {
-                                        'error': f'Compte verrouillé après 5 tentatives échouées. Réessayez dans {int(remaining_time)} minutes.',
-                                        'locked': True,
-                                        'locked_until': user.locked_until.isoformat()
-                                    },
-                                    status=status.HTTP_403_FORBIDDEN
-                                )
+                    user = User.objects.get(username=username)
+                    try:
+                        if hasattr(user, 'increment_failed_attempts'):
+                            user.increment_failed_attempts()
+                            user.refresh_from_db()
+                            if hasattr(user, 'locked_until') and user.locked_until:
+                                if timezone.now() < user.locked_until:
+                                    remaining_time = (user.locked_until - timezone.now()).total_seconds() / 60
+                                    return Response(
+                                        {
+                                            'error': f'Compte verrouillé après 5 tentatives échouées. Réessayez dans {int(remaining_time)} minutes.',
+                                            'locked': True,
+                                            'locked_until': user.locked_until.isoformat()
+                                        },
+                                        status=status.HTTP_403_FORBIDDEN
+                                    )
+                    except Exception as e:
+                        # Log error but don't reveal details
+                        import logging
+                        logger = logging.getLogger(__name__)
+                        logger.error(f"Error incrementing failed attempts: {e}")
+                except User.DoesNotExist:
+                    pass
                 except Exception as e:
                     # Log error but don't reveal details
                     import logging
                     logger = logging.getLogger(__name__)
-                    logger.error(f"Error incrementing failed attempts: {e}")
-            except User.DoesNotExist:
-                pass
-            except Exception as e:
-                # Log error but don't reveal details
-                import logging
-                logger = logging.getLogger(__name__)
-                logger.error(f"Error in failed login handling: {e}")
+                    logger.error(f"Error in failed login handling: {e}")
         
-        # Return generic error to avoid revealing if user exists
+        # Return validation errors from serializer
         return Response(
-            {'error': 'Identifiants invalides'},
+            error_response,
             status=status.HTTP_400_BAD_REQUEST
         )
 

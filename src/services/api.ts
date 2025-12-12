@@ -223,12 +223,26 @@ class ApiClient {
         }
         
         const errorData = await response.json().catch(() => ({}));
+        
+        // Log error details for debugging (always log 400 errors to help diagnose issues)
+        if (import.meta.env.DEV || response.status === 400) {
+          console.error('❌ API Error Details:', {
+            status: response.status,
+            url: url,
+            errorData: errorData,
+            endpoint: endpoint,
+          });
+        }
+        
         // Handle different error formats
         let errorMessage = errorData.error || errorData.message || errorData.detail;
+        
+        // Handle non_field_errors (common in DRF)
         if (errorData.non_field_errors && Array.isArray(errorData.non_field_errors)) {
           errorMessage = errorData.non_field_errors[0];
         }
-        // If there are validation errors, include them in the message
+        
+        // Handle field-specific validation errors
         if (errorData.errors && typeof errorData.errors === 'object') {
           const errorMessages = Object.entries(errorData.errors)
             .map(([field, messages]: [string, any]) => {
@@ -240,6 +254,16 @@ class ApiClient {
             errorMessage = errorMessage ? `${errorMessage} (${errorMessages})` : errorMessages;
           }
         }
+        
+        // Handle DRF serializer errors (nested structure)
+        if (errorData.username && Array.isArray(errorData.username)) {
+          errorMessage = `Nom d'utilisateur: ${errorData.username.join(', ')}`;
+        }
+        if (errorData.password && Array.isArray(errorData.password)) {
+          const pwdMsg = errorData.password.join(', ');
+          errorMessage = errorMessage ? `${errorMessage}; Mot de passe: ${pwdMsg}` : `Mot de passe: ${pwdMsg}`;
+        }
+        
         if (!errorMessage) {
           errorMessage = `HTTP error! status: ${response.status}`;
         }
@@ -282,9 +306,23 @@ class ApiClient {
   // ========================================================================
   
   async login(credentials: LoginRequest): Promise<LoginResponse> {
+    // Ensure credentials are properly formatted
+    const loginData = {
+      username: credentials.username?.trim() || '',
+      password: credentials.password || '',
+    };
+    
+    // Debug log in development
+    if (import.meta.env.DEV) {
+      console.log('🔐 Login request:', { 
+        username: loginData.username, 
+        passwordLength: loginData.password.length 
+      });
+    }
+    
     const response = await this.request<LoginResponse>('/auth/login/', {
       method: 'POST',
-      body: JSON.stringify(credentials),
+      body: JSON.stringify(loginData),
     });
     
     this.token = response.token;
