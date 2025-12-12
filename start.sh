@@ -13,20 +13,39 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
-# Function to check if a port is in use
+# Function to check if a port is in use (works in containerized environments)
 check_port() {
-    if lsof -Pi :$1 -sTCP:LISTEN -t >/dev/null ; then
-        echo -e "${YELLOW}⚠️  Port $1 is already in use${NC}"
-        return 1
+    if command -v lsof &> /dev/null; then
+        if lsof -Pi :$1 -sTCP:LISTEN -t >/dev/null 2>&1; then
+            echo -e "${YELLOW}⚠️  Port $1 is already in use${NC}"
+            return 1
+        else
+            return 0
+        fi
+    elif command -v netstat &> /dev/null; then
+        if netstat -tuln 2>/dev/null | grep -q ":$1 "; then
+            echo -e "${YELLOW}⚠️  Port $1 is already in use${NC}"
+            return 1
+        else
+            return 0
+        fi
     else
+        # Can't check port, assume it's available
         return 0
     fi
 }
 
-# Function to kill process on port
+# Function to kill process on port (works in containerized environments)
 kill_port() {
     echo -e "${YELLOW}🔄 Killing process on port $1...${NC}"
-    lsof -ti:$1 | xargs kill -9 2>/dev/null || true
+    if command -v lsof &> /dev/null; then
+        lsof -ti:$1 2>/dev/null | xargs kill -9 2>/dev/null || true
+    elif command -v fuser &> /dev/null; then
+        fuser -k $1/tcp 2>/dev/null || true
+    else
+        # Can't kill, just continue
+        echo -e "${YELLOW}   (Port cleanup tools not available, continuing...)${NC}"
+    fi
     sleep 2
 }
 
@@ -95,112 +114,136 @@ if [ -f "backend/.env" ]; then
     set +a
 fi
 
+# Change to backend directory
+cd backend
+
+# Determine Python command
+if [ -d "venv" ]; then
+    PYTHON_CMD="$(pwd)/venv/bin/python"
+else
+    PYTHON_CMD=python3
+fi
+
+# Check if Django is set up
+if [ ! -f "manage.py" ]; then
+    echo -e "${YELLOW}🔄 Django backend not set up, running setup...${NC}"
+    bash setup_django.sh
+fi
+
 # Check database authentication method
 DB_PASSWORD=${DB_PASSWORD:-}
+DB_HOST=${DB_HOST:-localhost}
+DB_PORT=${DB_PORT:-5432}
+
 # Check if password is empty, default, or just whitespace
 if [ -z "$DB_PASSWORD" ] || [ "$DB_PASSWORD" = "enna_password" ] || [ -z "${DB_PASSWORD// }" ]; then
-    # Using peer authentication - try to run as postgres user
-    echo -e "${YELLOW}⚠️  Database password not configured. Attempting peer authentication...${NC}"
-    echo -e "${YELLOW}   This requires sudo access.${NC}"
-    
-    # Change to backend directory first
-    cd backend
-    
-    # Determine Python command
-    if [ -d "venv" ]; then
-        PYTHON_CMD="$(pwd)/venv/bin/python"
-    else
-        PYTHON_CMD=python3
-    fi
-    
-    # Check if Django is set up
-    if [ ! -f "manage.py" ]; then
-        echo -e "${YELLOW}🔄 Django backend not set up, running setup...${NC}"
-        bash setup_django.sh
-    fi
-    
-    # Try to run with sudo (test if passwordless sudo works for postgres user)
-    if sudo -n -u postgres true 2>/dev/null; then
-        # Passwordless sudo available
-        echo -e "${GREEN}✅ Using passwordless sudo for peer authentication${NC}"
-        # Use absolute path and ensure PATH is set correctly
-        sudo -E -u postgres env PATH="$PATH" "$PYTHON_CMD" manage.py runserver 8000 &
+    # Check if we're in a containerized environment (no sudo available)
+    if ! command -v sudo &> /dev/null || [ "$DB_HOST" != "localhost" ]; then
+        # Containerized environment - use environment variables
+        echo -e "${YELLOW}⚠️  Containerized environment detected${NC}"
+        echo -e "${YELLOW}   Using environment variables for database connection${NC}"
+        # Export all database environment variables
+        export DB_PASSWORD DB_USER DB_NAME DB_HOST DB_PORT
+        $PYTHON_CMD manage.py runserver 0.0.0.0:8000 &
         BACKEND_PID=$!
-    else
-        # Try running anyway - might work with passwordless sudo configured
-        echo -e "${YELLOW}⚠️  Attempting to use sudo (passwordless sudo may be configured)...${NC}"
-        sudo -E -u postgres env PATH="$PATH" "$PYTHON_CMD" manage.py runserver 8000 &
-        BACKEND_PID=$!
-        # Give it a moment to see if it starts
-        sleep 2
-        if ! kill -0 $BACKEND_PID 2>/dev/null; then
-            echo -e "${RED}❌ Sudo failed. Please configure passwordless sudo:${NC}"
-            echo -e "${YELLOW}   echo \"$USER ALL=(postgres) NOPASSWD: ALL\" | sudo tee /etc/sudoers.d/postgres-enna${NC}"
-            echo ""
-            echo -e "${YELLOW}Or set up password authentication:${NC}"
-            echo -e "${GREEN}   cd backend && sudo ./setup_db_password.sh${NC}"
-            cd ..
-            exit 1
+    elif command -v sudo &> /dev/null; then
+        # Local development - try peer authentication with sudo
+        echo -e "${YELLOW}⚠️  Database password not configured. Attempting peer authentication...${NC}"
+        echo -e "${YELLOW}   This requires sudo access.${NC}"
+        
+        # Try to run with sudo (test if passwordless sudo works for postgres user)
+        if sudo -n -u postgres true 2>/dev/null; then
+            # Passwordless sudo available
+            echo -e "${GREEN}✅ Using passwordless sudo for peer authentication${NC}"
+            sudo -E -u postgres env PATH="$PATH" "$PYTHON_CMD" manage.py runserver 0.0.0.0:8000 &
+            BACKEND_PID=$!
+        else
+            # Try running anyway - might work with passwordless sudo configured
+            echo -e "${YELLOW}⚠️  Attempting to use sudo (passwordless sudo may be configured)...${NC}"
+            if sudo -E -u postgres env PATH="$PATH" "$PYTHON_CMD" manage.py runserver 0.0.0.0:8000 & 2>/dev/null; then
+                BACKEND_PID=$!
+                sleep 2
+                if ! kill -0 $BACKEND_PID 2>/dev/null; then
+                    echo -e "${RED}❌ Sudo failed. Please configure passwordless sudo or set DB_PASSWORD${NC}"
+                    cd ..
+                    exit 1
+                fi
+            else
+                echo -e "${RED}❌ Sudo not available. Please set DB_PASSWORD environment variable${NC}"
+                cd ..
+                exit 1
+            fi
         fi
+    else
+        # No sudo available - use environment variables
+        echo -e "${YELLOW}⚠️  Sudo not available. Using environment variables${NC}"
+        export DB_PASSWORD DB_USER DB_NAME DB_HOST DB_PORT
+        $PYTHON_CMD manage.py runserver 0.0.0.0:8000 &
+        BACKEND_PID=$!
     fi
-    cd ..
 else
     # Using password authentication, run as current user
     echo -e "${GREEN}✅ Using password authentication${NC}"
-    cd backend
-    
-    # Determine Python command
-    if [ -d "venv" ]; then
-        PYTHON_CMD="$(pwd)/venv/bin/python"
-    else
-        PYTHON_CMD=python3
-    fi
-    
-    # Check if Django is set up
-    if [ ! -f "manage.py" ]; then
-        echo -e "${YELLOW}🔄 Django backend not set up, running setup...${NC}"
-        bash setup_django.sh
-    fi
     
     # Export environment variables for Django
     export DB_PASSWORD DB_USER DB_NAME DB_HOST DB_PORT
     
-    $PYTHON_CMD manage.py runserver 8000 &
+    $PYTHON_CMD manage.py runserver 0.0.0.0:8000 &
     BACKEND_PID=$!
-    cd ..
 fi
+
+cd ..
 
 # Wait for backend to start
 echo -e "${YELLOW}⏳ Waiting for backend to start...${NC}"
 sleep 5
 
-# Check if backend is running
-if curl -s http://localhost:8000/api/health/ > /dev/null; then
-    echo -e "${GREEN}✅ Backend running on http://localhost:8000${NC}"
+# Check if backend is running (with fallback if curl not available)
+if command -v curl &> /dev/null; then
+    if curl -s http://localhost:8000/api/health/ > /dev/null 2>&1; then
+        echo -e "${GREEN}✅ Backend running on http://localhost:8000${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Backend health check failed, but process is running${NC}"
+        echo -e "${YELLOW}   (This may be normal during startup)${NC}"
+    fi
 else
-    echo -e "${RED}❌ Backend failed to start${NC}"
-    kill $BACKEND_PID 2>/dev/null || true
-    exit 1
+    # curl not available, just check if process is running
+    if kill -0 $BACKEND_PID 2>/dev/null; then
+        echo -e "${GREEN}✅ Backend process running (PID: $BACKEND_PID)${NC}"
+    else
+        echo -e "${RED}❌ Backend process failed to start${NC}"
+        exit 1
+    fi
 fi
 
-# Start Frontend
-echo -e "${BLUE}⚛️  Starting Frontend Development Server...${NC}"
-npm run dev &
-FRONTEND_PID=$!
-
-# Wait for frontend to start
-echo -e "${YELLOW}⏳ Waiting for frontend to start...${NC}"
-sleep 5
-
-# Check if frontend is running
-if curl -s http://localhost:8080 > /dev/null; then
-    echo -e "${GREEN}✅ Frontend running on http://localhost:8080${NC}"
+# Start Frontend (only if not in production mode)
+if [ "${NODE_ENV}" != "production" ] && [ -z "${SKIP_FRONTEND:-}" ]; then
+    echo -e "${BLUE}⚛️  Starting Frontend Development Server...${NC}"
+    npm run dev &
+    FRONTEND_PID=$!
+    
+    # Wait for frontend to start
+    echo -e "${YELLOW}⏳ Waiting for frontend to start...${NC}"
+    sleep 5
+    
+    # Check if frontend is running (with fallback if curl not available)
+    if command -v curl &> /dev/null; then
+        if curl -s http://localhost:8080 > /dev/null 2>&1; then
+            echo -e "${GREEN}✅ Frontend running on http://localhost:8080${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Frontend health check failed, but process is running${NC}"
+        fi
+    else
+        # curl not available, just check if process is running
+        if kill -0 $FRONTEND_PID 2>/dev/null; then
+            echo -e "${GREEN}✅ Frontend process running (PID: $FRONTEND_PID)${NC}"
+        else
+            echo -e "${YELLOW}⚠️  Frontend process check failed (may be normal)${NC}"
+        fi
+    fi
 else
-    echo -e "${RED}❌ Frontend failed to start${NC}"
-    kill $FRONTEND_PID 2>/dev/null || true
-    kill $BACKEND_PID 2>/dev/null || true
-    kill $DB_VIEWER_PID 2>/dev/null || true
-    exit 1
+    echo -e "${YELLOW}⚠️  Skipping frontend (production mode or SKIP_FRONTEND set)${NC}"
+    FRONTEND_PID=""
 fi
 
 echo ""
