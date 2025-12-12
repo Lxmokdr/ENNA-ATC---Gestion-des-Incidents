@@ -1,7 +1,38 @@
 // API service for Django backend integration
 
-// Use environment variable for API URL, fallback to localhost for development
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000/api';
+// Determine API URL based on environment
+// Priority:
+// 1. VITE_API_BASE_URL environment variable (set in Vercel/build)
+// 2. Auto-detect production (if on Vercel domain, use Render backend)
+// 3. Fallback to localhost for local development
+function getApiBaseUrl(): string {
+  // Check if VITE_API_BASE_URL is explicitly set
+  if (import.meta.env.VITE_API_BASE_URL) {
+    return import.meta.env.VITE_API_BASE_URL;
+  }
+  
+  // Auto-detect production environment
+  // If running on Vercel domain, use Render backend
+  if (typeof window !== 'undefined') {
+    const hostname = window.location.hostname;
+    if (hostname.includes('vercel.app') || hostname.includes('onrender.com')) {
+      return 'https://enna-atc-gestion-des-incidents.onrender.com/api';
+    }
+  }
+  
+  // Fallback to localhost for local development
+  return 'http://localhost:8000/api';
+}
+
+const API_BASE_URL = getApiBaseUrl();
+
+// Debug: Log the API URL being used
+if (import.meta.env.DEV) {
+  console.log('🔧 API Configuration:');
+  console.log('  - Base URL:', API_BASE_URL);
+  console.log('  - VITE_API_BASE_URL:', import.meta.env.VITE_API_BASE_URL || 'not set');
+  console.log('  - Hostname:', typeof window !== 'undefined' ? window.location.hostname : 'N/A');
+}
 
 // Types
 export interface User {
@@ -224,11 +255,21 @@ class ApiClient {
     } catch (error: any) {
       // Handle network errors (Failed to fetch, CORS, etc.)
       if (error.name === 'TypeError' && error.message.includes('fetch')) {
-        const networkError = new Error(
-          `Impossible de se connecter au serveur. Vérifiez que le backend est démarré sur ${this.baseURL.replace('/api', '')}`
-        );
+        const baseUrl = this.baseURL.replace('/api', '');
+        let errorMessage = `Impossible de se connecter au serveur.`;
+        
+        // Provide helpful message based on environment
+        if (baseUrl.includes('localhost')) {
+          errorMessage += ` Vérifiez que le backend est démarré sur ${baseUrl}`;
+        } else {
+          errorMessage += ` Tentative de connexion à ${baseUrl}/api`;
+          errorMessage += `\nVérifiez que le backend Render est en ligne et que CORS est configuré.`;
+        }
+        
+        const networkError = new Error(errorMessage);
         (networkError as any).status = 0;
         (networkError as any).isNetworkError = true;
+        (networkError as any).url = this.baseURL;
         throw networkError;
       }
       // Re-throw other errors
