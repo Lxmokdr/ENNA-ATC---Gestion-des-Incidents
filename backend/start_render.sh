@@ -15,7 +15,7 @@ else
     PYTHON_CMD="python3"
 fi
 
-# Export all database environment variables
+# Export all database environment variables (Render sets these automatically)
 export DB_PASSWORD DB_USER DB_NAME DB_HOST DB_PORT
 
 # Run migrations
@@ -30,6 +30,7 @@ $PYTHON_CMD manage.py create_default_users 2>/dev/null || {
     echo "⚠️  User creation skipped (may already exist)"
 }
 
-# Start server
-echo "✅ Starting Django server on port ${PORT:-8000}..."
-exec $PYTHON_CMD manage.py runserver 0.0.0.0:${PORT:-8000}
+# Start server on the port Render provides
+SERVER_PORT=${PORT:-8000}
+echo "✅ Starting Django server on port $SERVER_PORT..."
+exec $PYTHON_CMD manage.py runserver 0.0.0.0:$SERVER_PORT

@@ -79,11 +79,13 @@ WSGI_APPLICATION = 'enna_backend.wsgi.application'
 # https://docs.djangoproject.com/en/5.0/ref/settings/#databases
 
 # PostgreSQL configuration
-DB_NAME = config('DB_NAME', default='enna_db')
-DB_USER = config('DB_USER', default='enna_user')
-DB_PASSWORD = config('DB_PASSWORD', default='enna_password', cast=str)
-DB_HOST = config('DB_HOST', default='localhost')
-DB_PORT = config('DB_PORT', default='5432')
+# Check environment variables first (for Render/containerized environments)
+# Then fall back to config() which reads from .env file
+DB_NAME = os.environ.get('DB_NAME') or config('DB_NAME', default='enna_db')
+DB_USER = os.environ.get('DB_USER') or config('DB_USER', default='enna_user')
+DB_PASSWORD = os.environ.get('DB_PASSWORD') or config('DB_PASSWORD', default='enna_password', cast=str)
+DB_HOST = os.environ.get('DB_HOST') or config('DB_HOST', default='localhost')
+DB_PORT = os.environ.get('DB_PORT') or config('DB_PORT', default='5432')
 
 # PostgreSQL database configuration
 # Use Unix socket (peer authentication) only for local development
@@ -101,28 +103,41 @@ is_containerized = (
     os.environ.get('DATABASE_URL', '') != ''  # Common in cloud platforms
 )
 
-if not DB_PASSWORD or DB_PASSWORD.strip() == '' or DB_PASSWORD == 'enna_password':
-    if is_containerized:
-        # Containerized environment - must use password authentication
-        # This should not happen, but provide a fallback
+# Check if password is actually set (not empty, not default, not just whitespace)
+has_password = (
+    DB_PASSWORD and 
+    DB_PASSWORD.strip() != '' and 
+    DB_PASSWORD != 'enna_password'
+)
+
+# Always use TCP/IP connection with password authentication in containerized environments
+# In local development, use Unix socket if no password is set
+if is_containerized:
+    # Containerized environment - must use password authentication
+    # Double-check password from environment (Render sets it via fromDatabase)
+    final_password = os.environ.get('DB_PASSWORD', '') or DB_PASSWORD
+    if not final_password or final_password.strip() == '' or final_password == 'enna_password':
         raise ValueError(
-            'DB_PASSWORD must be set in containerized environments. '
-            'Please set the DB_PASSWORD environment variable.'
+            f'DB_PASSWORD must be set in containerized environments. '
+            f'DB_HOST={db_host}, DB_USER={DB_USER}, DB_NAME={DB_NAME}, '
+            f'RENDER={os.environ.get("RENDER", "not set")}, '
+            f'DB_PASSWORD from env={bool(os.environ.get("DB_PASSWORD"))}'
         )
-    else:
-        # Local development - Use Unix socket for peer authentication
-        # This works when running as postgres user or via sudo -u postgres
-        DATABASES = {
-            'default': {
-                'ENGINE': 'django.db.backends.postgresql',
-                'NAME': DB_NAME,
-                'USER': 'postgres',  # Use postgres user for peer authentication
-                'HOST': '/var/run/postgresql',
-                'PORT': db_port if db_port != '5432' else '5433',  # Try 5433 for PostgreSQL 16
-            }
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': DB_NAME,
+            'USER': DB_USER,
+            'PASSWORD': final_password,
+            'HOST': db_host,
+            'PORT': db_port,
+            'OPTIONS': {
+                'connect_timeout': 10,
+            },
         }
-else:
-    # Use TCP/IP connection with password authentication
+    }
+elif has_password:
+    # Local development with password - use TCP/IP
     DATABASES = {
         'default': {
             'ENGINE': 'django.db.backends.postgresql',
@@ -134,6 +149,18 @@ else:
             'OPTIONS': {
                 'connect_timeout': 10,
             },
+        }
+    }
+else:
+    # Local development - Use Unix socket for peer authentication
+    # This works when running as postgres user or via sudo -u postgres
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.postgresql',
+            'NAME': DB_NAME,
+            'USER': 'postgres',  # Use postgres user for peer authentication
+            'HOST': '/var/run/postgresql',
+            'PORT': db_port if db_port != '5432' else '5433',  # Try 5433 for PostgreSQL 16
         }
     }
 
