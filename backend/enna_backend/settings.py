@@ -18,9 +18,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-enna-secret-key-change-in-production')
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = config('DEBUG', default=True, cast=bool)
 
-ALLOWED_HOSTS = ['*']
+# Allowed hosts - use environment variable or default
+ALLOWED_HOSTS = config(
+    'ALLOWED_HOSTS',
+    default='localhost,127.0.0.1,enna-atc-gestion-des-incidents.onrender.com,enna-atc-gestion-des-incidents.vercel.app',
+    cast=lambda v: [s.strip() for s in v.split(',')]
+)
 
 
 # Application definition
@@ -200,8 +205,32 @@ SIMPLE_JWT = {
 }
 
 # CORS settings
-CORS_ALLOW_ALL_ORIGINS = True
+# Allow specific origins in production, all in development
+CORS_ALLOWED_ORIGINS = [
+    'http://localhost:8080',
+    'http://localhost:5173',  # Vite dev server
+    'https://enna-atc-gestion-des-incidents.vercel.app',
+    'https://enna-atc-gestion-des-incidents.onrender.com',
+]
+
+# Fallback to allow all in development (for local testing)
+# In production, only allow specific origins
+CORS_ALLOW_ALL_ORIGINS = DEBUG
 CORS_ALLOW_CREDENTIALS = True
+
+# Additional CORS settings for production
+if not DEBUG:
+    CORS_ALLOW_HEADERS = [
+        'accept',
+        'accept-encoding',
+        'authorization',
+        'content-type',
+        'dnt',
+        'origin',
+        'user-agent',
+        'x-csrftoken',
+        'x-requested-with',
+    ]
 
 # Custom User Model
 AUTH_USER_MODEL = 'api.User'

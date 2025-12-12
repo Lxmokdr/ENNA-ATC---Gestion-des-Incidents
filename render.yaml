@@ -1,0 +1,44 @@
+
+services:
+  - type: web
+    name: enna-backend
+    env: python
+    buildCommand: cd backend && bash setup_django.sh
+    startCommand: cd backend && bash start_render.sh
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.2
+      - key: DB_NAME
+        fromDatabase:
+          name: enna-db
+          property: database
+      - key: DB_USER
+        fromDatabase:
+          name: enna-db
+          property: user
+      - key: DB_PASSWORD
+        fromDatabase:
+          name: enna-db
+          property: password
+      - key: DB_HOST
+        fromDatabase:
+          name: enna-db
+          property: host
+      - key: DB_PORT
+        fromDatabase:
+          name: enna-db
+          property: port
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "False"
+      - key: ALLOWED_HOSTS
+        value: "enna-atc-gestion-des-incidents.onrender.com,enna-atc-gestion-des-incidents.vercel.app"
+      - key: RENDER
+        value: "true"
+
+databases:
+  - name: enna-db
+    databaseName: enna_db
+    user: enna_user
+    plan: free

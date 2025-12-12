@@ -155,12 +155,14 @@ if [ -z "$DB_PASSWORD" ] || [ "$DB_PASSWORD" = "enna_password" ] || [ -z "${DB_P
         if sudo -n -u postgres true 2>/dev/null; then
             # Passwordless sudo available
             echo -e "${GREEN}✅ Using passwordless sudo for peer authentication${NC}"
-            sudo -E -u postgres env PATH="$PATH" "$PYTHON_CMD" manage.py runserver 0.0.0.0:8000 &
+            SERVER_PORT=${PORT:-8000}
+            sudo -E -u postgres env PATH="$PATH" "$PYTHON_CMD" manage.py runserver 0.0.0.0:$SERVER_PORT &
             BACKEND_PID=$!
         else
             # Try running anyway - might work with passwordless sudo configured
             echo -e "${YELLOW}⚠️  Attempting to use sudo (passwordless sudo may be configured)...${NC}"
-            if sudo -E -u postgres env PATH="$PATH" "$PYTHON_CMD" manage.py runserver 0.0.0.0:8000 & 2>/dev/null; then
+            SERVER_PORT=${PORT:-8000}
+            if sudo -E -u postgres env PATH="$PATH" "$PYTHON_CMD" manage.py runserver 0.0.0.0:$SERVER_PORT & 2>/dev/null; then
                 BACKEND_PID=$!
                 sleep 2
                 if ! kill -0 $BACKEND_PID 2>/dev/null; then
@@ -178,7 +180,8 @@ if [ -z "$DB_PASSWORD" ] || [ "$DB_PASSWORD" = "enna_password" ] || [ -z "${DB_P
         # No sudo available - use environment variables
         echo -e "${YELLOW}⚠️  Sudo not available. Using environment variables${NC}"
         export DB_PASSWORD DB_USER DB_NAME DB_HOST DB_PORT
-        $PYTHON_CMD manage.py runserver 0.0.0.0:8000 &
+        SERVER_PORT=${PORT:-8000}
+        $PYTHON_CMD manage.py runserver 0.0.0.0:$SERVER_PORT &
         BACKEND_PID=$!
     fi
 else
@@ -188,7 +191,9 @@ else
     # Export environment variables for Django
     export DB_PASSWORD DB_USER DB_NAME DB_HOST DB_PORT
     
-    $PYTHON_CMD manage.py runserver 0.0.0.0:8000 &
+    # Use PORT environment variable if set (Render, Heroku, etc.), otherwise default to 8000
+    SERVER_PORT=${PORT:-8000}
+    $PYTHON_CMD manage.py runserver 0.0.0.0:$SERVER_PORT &
     BACKEND_PID=$!
 fi
 
@@ -199,9 +204,10 @@ echo -e "${YELLOW}⏳ Waiting for backend to start...${NC}"
 sleep 5
 
 # Check if backend is running (with fallback if curl not available)
+SERVER_PORT=${PORT:-8000}
 if command -v curl &> /dev/null; then
-    if curl -s http://localhost:8000/api/health/ > /dev/null 2>&1; then
-        echo -e "${GREEN}✅ Backend running on http://localhost:8000${NC}"
+    if curl -s http://localhost:$SERVER_PORT/api/health/ > /dev/null 2>&1; then
+        echo -e "${GREEN}✅ Backend running on http://localhost:$SERVER_PORT${NC}"
     else
         echo -e "${YELLOW}⚠️  Backend health check failed, but process is running${NC}"
         echo -e "${YELLOW}   (This may be normal during startup)${NC}"
@@ -209,7 +215,7 @@ if command -v curl &> /dev/null; then
 else
     # curl not available, just check if process is running
     if kill -0 $BACKEND_PID 2>/dev/null; then
-        echo -e "${GREEN}✅ Backend process running (PID: $BACKEND_PID)${NC}"
+        echo -e "${GREEN}✅ Backend process running on port $SERVER_PORT (PID: $BACKEND_PID)${NC}"
     else
         echo -e "${RED}❌ Backend process failed to start${NC}"
         exit 1
@@ -249,8 +255,10 @@ fi
 echo ""
 echo -e "${GREEN}🎉 ENNA ATC is now running!${NC}"
 echo "=================================================="
-echo -e "${BLUE}📱 Frontend:${NC}     http://localhost:8080"
-echo -e "${BLUE}🔧 Backend API:${NC}   http://localhost:8000 (Django)"
+if [ -z "${SKIP_FRONTEND:-}" ] && [ "${NODE_ENV}" != "production" ]; then
+    echo -e "${BLUE}📱 Frontend:${NC}     http://localhost:8080"
+fi
+echo -e "${BLUE}🔧 Backend API:${NC}   http://localhost:${SERVER_PORT:-8000} (Django)"
 echo ""
 echo -e "${YELLOW}👥 Default Users (Password: 01010101):${NC}"
 echo "   • technicien1, technicien2"

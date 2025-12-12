@@ -112,32 +112,52 @@ fi
 # Run migrations
 echo -e "${BLUE}🗄️  Running database migrations...${NC}"
 # Set database user to postgres for peer authentication if password is not set
+# In containerized environments, these should be set via environment variables
 export DB_USER=${DB_USER:-postgres}
 export DB_PASSWORD=${DB_PASSWORD:-}
 export DB_NAME=${DB_NAME:-enna_db}
 export DB_HOST=${DB_HOST:-localhost}
-export DB_PORT=${DB_PORT:-5433}
+export DB_PORT=${DB_PORT:-5432}
 
-if $PYTHON_CMD manage.py makemigrations; then
+# Check if we're in a containerized environment (no sudo, DB_HOST not localhost)
+if [ -z "$DB_PASSWORD" ] && [ "$DB_HOST" != "localhost" ] && [ "$DB_HOST" != "127.0.0.1" ]; then
+    echo -e "${RED}❌ Error: DB_PASSWORD must be set when DB_HOST is not localhost${NC}"
+    echo -e "${YELLOW}   Please set DB_PASSWORD environment variable${NC}"
+    exit 1
+fi
+
+if $PYTHON_CMD manage.py makemigrations --no-input 2>/dev/null; then
     echo -e "${GREEN}✅ Migrations created${NC}"
 else
-    echo -e "${YELLOW}⚠️  Warning: Failed to create migrations${NC}"
+    echo -e "${YELLOW}⚠️  Warning: Failed to create migrations (may be normal if no changes)${NC}"
 fi
 
-if $PYTHON_CMD manage.py migrate; then
+if $PYTHON_CMD manage.py migrate --no-input; then
     echo -e "${GREEN}✅ Database migrated${NC}"
 else
-    echo -e "${YELLOW}⚠️  Warning: Failed to run migrations (may need to run as postgres user)${NC}"
-    echo -e "${YELLOW}   You can run migrations manually later${NC}"
+    echo -e "${YELLOW}⚠️  Warning: Failed to run migrations${NC}"
+    if [ -z "$DB_PASSWORD" ] && command -v sudo &> /dev/null; then
+        echo -e "${YELLOW}   You may need to run migrations as postgres user${NC}"
+    else
+        echo -e "${YELLOW}   Check database connection settings${NC}"
+    fi
 fi
 
-# Create default users
-echo -e "${BLUE}👥 Creating default users...${NC}"
-if $PYTHON_CMD manage.py create_default_users; then
-    echo -e "${GREEN}✅ Default users created${NC}"
+# Create default users (skip in production/containerized environments)
+if [ "${SKIP_DEFAULT_USERS:-}" != "true" ] && [ -z "${RENDER:-}" ]; then
+    echo -e "${BLUE}👥 Creating default users...${NC}"
+    if $PYTHON_CMD manage.py create_default_users 2>/dev/null; then
+        echo -e "${GREEN}✅ Default users created${NC}"
+    else
+        echo -e "${YELLOW}⚠️  Warning: Failed to create default users${NC}"
+        if [ -z "$DB_PASSWORD" ] && command -v sudo &> /dev/null; then
+            echo -e "${YELLOW}   You may need to run as postgres user${NC}"
+        fi
+        echo -e "${YELLOW}   You can create users manually later${NC}"
+    fi
 else
-    echo -e "${YELLOW}⚠️  Warning: Failed to create default users (may need to run as postgres user)${NC}"
-    echo -e "${YELLOW}   You can create users manually later${NC}"
+    echo -e "${YELLOW}⚠️  Skipping default user creation (containerized environment)${NC}"
+    echo -e "${YELLOW}   Create users manually via Django admin or management command${NC}"
 fi
 
 echo ""
